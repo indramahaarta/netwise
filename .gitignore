@@ -1,0 +1,26 @@
+# Security & Credentials
+.env
+*.local
+auth_key.json
+
+# Go Build Artifacts
+backend/bin/
+backend/netwise
+*.exe
+*.test
+__debug_bin
+
+# IDE & Editor Specific
+.idea/
+.vscode/
+.claude/settings.local.json
+*.swp
+*.swo
+
+# Docker
+.docker/
+postgres_data/
+data/
+
+# Logs
+*.log
