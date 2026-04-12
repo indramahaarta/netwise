@@ -1,0 +1,109 @@
+export interface User {
+  id: number
+  username: string
+  email: string
+  has_finnhub_api_key: boolean
+  created_time: string
+}
+
+export interface Portfolio {
+  id: number
+  user_id: number
+  name: string
+  currency: string
+  cash: string
+  updated_time: string
+  created_time: string
+}
+
+export interface Ticker {
+  id: number
+  symbol: string
+  name: string
+  type: string
+  currency: string
+  sector: string
+}
+
+export interface Holding {
+  id: number
+  portfolio_id: number
+  ticker_id: number
+  symbol: string
+  ticker_name: string
+  currency: string
+  shares: string
+  avg_cost: string
+  live_price: number
+  equity: string
+  invested: string
+  unrealized_pnl: string
+  pnl_pct: string
+}
+
+export interface Transaction {
+  id: number
+  portfolio_id: number
+  ticker_id: number
+  side: 'BUY' | 'SELL'
+  quantity: string
+  price: string
+  realized_gain: string
+  fee: string
+  total_amount: string
+  transaction_time: string
+  symbol: string
+  ticker_name: string
+}
+
+export interface CashFlow {
+  id: number
+  portfolio_id: number
+  type: 'DEPOSIT' | 'WITHDRAWAL'
+  source_amount: string
+  source_currency: string
+  target_amount: string
+  target_currency: string
+  broker_rate: string | null
+  transaction_time: string
+}
+
+export interface Dividend {
+  id: number
+  portfolio_id: number
+  ticker_id: number
+  currency: string
+  amount: string
+  transaction_time: string
+  symbol: string
+  ticker_name: string
+}
+
+export interface NetWorth {
+  currency: string
+  total_equity: string
+  total_invested: string
+  total_cash: string
+  net_worth: string
+  unrealized_pnl: string
+  realized_pnl: string
+  total_dividends: string
+  total_fees: string
+  fx_rate: number
+}
+
+export interface NetWorthSnapshot {
+  snapshot_date: string
+  net_worth: string
+  total_invested: string
+  unrealized: string
+  realized: string
+  cash_balance: string
+}
+
+export interface StockSearchResult {
+  symbol: string
+  description: string
+  type: string
+  displaySymbol: string
+}
