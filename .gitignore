@@ -10,6 +10,11 @@ backend/netwise
 *.test
 __debug_bin
 
+# Frontend
+node_modules/
+.pnp
+.pnp.*
+
 # IDE & Editor Specific
 .idea/
 .vscode/
