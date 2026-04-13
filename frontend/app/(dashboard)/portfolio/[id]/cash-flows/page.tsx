@@ -35,48 +35,70 @@ export default function CashFlowsPage({ params }: { params: Promise<{ id: string
         <div className="space-y-2">
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10" />)}
         </div>
+      ) : (cashFlows || []).length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">No cash flows recorded</p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead className="text-right">From</TableHead>
-              <TableHead className="text-right">To</TableHead>
-              <TableHead className="text-right">Rate</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        <>
+          {/* Mobile card list */}
+          <div className="md:hidden space-y-2">
             {(cashFlows || []).map((cf) => (
-              <TableRow key={cf.id}>
-                <TableCell className="text-xs text-muted-foreground">
-                  {new Date(cf.transaction_time).toLocaleDateString()}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={cf.type === 'DEPOSIT' ? 'default' : 'outline'}>
+              <div key={cf.id} className="rounded-lg border p-3 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Badge variant={cf.type === 'DEPOSIT' ? 'default' : 'outline'} className="text-xs">
                     {cf.type}
                   </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  {parseFloat(cf.source_amount).toLocaleString()} {cf.source_currency}
-                </TableCell>
-                <TableCell className="text-right">
-                  {parseFloat(cf.target_amount).toFixed(4)} {cf.target_currency}
-                </TableCell>
-                <TableCell className="text-right text-muted-foreground">
-                  {cf.broker_rate ? parseFloat(cf.broker_rate).toLocaleString() : '—'}
-                </TableCell>
-              </TableRow>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(cf.transaction_time).toLocaleDateString()}
+                  </span>
+                </div>
+                <p className="text-sm">
+                  <span className="font-medium">{parseFloat(cf.source_amount).toLocaleString()} {cf.source_currency}</span>
+                  <span className="text-muted-foreground mx-2">→</span>
+                  <span className="font-medium">{parseFloat(cf.target_amount).toFixed(4)} {cf.target_currency}</span>
+                </p>
+                {cf.broker_rate && (
+                  <p className="text-xs text-muted-foreground">Rate: {parseFloat(cf.broker_rate).toLocaleString()}</p>
+                )}
+              </div>
             ))}
-            {(cashFlows || []).length === 0 && (
+          </div>
+
+          {/* Desktop table */}
+          <Table className="hidden md:table">
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                  No cash flows recorded
-                </TableCell>
+                <TableHead>Date</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead className="text-right">From</TableHead>
+                <TableHead className="text-right">To</TableHead>
+                <TableHead className="text-right">Rate</TableHead>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {(cashFlows || []).map((cf) => (
+                <TableRow key={cf.id}>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {new Date(cf.transaction_time).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={cf.type === 'DEPOSIT' ? 'default' : 'outline'}>
+                      {cf.type}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {parseFloat(cf.source_amount).toLocaleString()} {cf.source_currency}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {parseFloat(cf.target_amount).toFixed(4)} {cf.target_currency}
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    {cf.broker_rate ? parseFloat(cf.broker_rate).toLocaleString() : '—'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </>
       )}
     </div>
   )

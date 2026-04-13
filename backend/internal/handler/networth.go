@@ -13,17 +13,29 @@ import (
 	"github.com/indramahaarta/netwise/internal/util"
 )
 
+type portfolioBreakdown struct {
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	Cash          string `json:"cash"`
+	NetWorth      string `json:"net_worth"`
+	TotalEquity   string `json:"total_equity"`
+	TotalInvested string `json:"total_invested"`
+	UnrealizedPnL string `json:"unrealized_pnl"`
+	RealizedPnL   string `json:"realized_pnl"`
+}
+
 type netWorthResponse struct {
-	Currency      string  `json:"currency"`
-	TotalEquity   string  `json:"total_equity"`
-	TotalInvested string  `json:"total_invested"`
-	TotalCash     string  `json:"total_cash"`
-	NetWorth      string  `json:"net_worth"`
-	UnrealizedPnL string  `json:"unrealized_pnl"`
-	RealizedPnL   string  `json:"realized_pnl"`
-	TotalDividends string `json:"total_dividends"`
-	TotalFees     string  `json:"total_fees"`
-	FxRate        float64 `json:"fx_rate,omitempty"`
+	Currency       string               `json:"currency"`
+	TotalEquity    string               `json:"total_equity"`
+	TotalInvested  string               `json:"total_invested"`
+	TotalCash      string               `json:"total_cash"`
+	NetWorth       string               `json:"net_worth"`
+	UnrealizedPnL  string               `json:"unrealized_pnl"`
+	RealizedPnL    string               `json:"realized_pnl"`
+	TotalDividends string               `json:"total_dividends"`
+	TotalFees      string               `json:"total_fees"`
+	FxRate         float64              `json:"fx_rate,omitempty"`
+	Portfolios     []portfolioBreakdown `json:"portfolios"`
 }
 
 // GetNetWorth aggregates all portfolios for the current user.
@@ -57,72 +69,105 @@ func (h *Handler) GetNetWorth(c *gin.Context) {
 	totalDividends := decimal.Zero
 	totalFees := decimal.Zero
 
+	// Resolve FX rate — try Finnhub first, fall back to open.er-api.com
 	var fxRate float64 = 1
-	if targetCurrency != "USD" && finnhubKey != "" {
-		fc := service.NewFinnhubClient(finnhubKey)
-		if rate, err := fc.ForexRate("USD", targetCurrency); err == nil && rate > 0 {
-			fxRate = rate
+	if targetCurrency != "USD" {
+		if finnhubKey != "" {
+			fc := service.NewFinnhubClient(finnhubKey)
+			if rate, err := fc.ForexRate("USD", targetCurrency); err == nil && rate > 0 {
+				fxRate = rate
+			}
+		}
+		if fxRate == 1 {
+			if rate, err := service.GetFreeForexRate("USD", targetCurrency); err == nil && rate > 0 {
+				fxRate = rate
+			}
 		}
 	}
 	fxRateD := decimal.NewFromFloat(fxRate)
 
+	breakdowns := make([]portfolioBreakdown, 0, len(portfolios))
+
 	for _, p := range portfolios {
-		// Holdings equity
+		pEquity := decimal.Zero
+		pInvested := decimal.Zero
+		pUnrealized := decimal.Zero
+
 		holdings, _ := h.queries.ListHoldingsByPortfolio(c, p.ID)
 		for _, h2 := range holdings {
 			shares := decimalFromString(h2.Share)
 			avg := decimalFromString(h2.Avg)
-			invested := shares.Mul(avg)
-			totalInvested = totalInvested.Add(invested)
+			inv := shares.Mul(avg)
+			pInvested = pInvested.Add(inv)
 
 			if finnhubKey != "" {
 				fc := service.NewFinnhubClient(finnhubKey)
 				if q, err := fc.Quote(h2.Symbol); err == nil && q.C > 0 {
 					livePrice := decimal.NewFromFloat(q.C)
-					equity := shares.Mul(livePrice)
-					totalEquity = totalEquity.Add(equity)
-					unrealized = unrealized.Add(equity.Sub(invested))
+					eq := shares.Mul(livePrice)
+					pEquity = pEquity.Add(eq)
+					pUnrealized = pUnrealized.Add(eq.Sub(inv))
 				} else {
-					// Fall back to avg if live price unavailable
-					totalEquity = totalEquity.Add(invested)
+					pEquity = pEquity.Add(inv)
 				}
 			} else {
-				totalEquity = totalEquity.Add(invested)
+				pEquity = pEquity.Add(inv)
 			}
 		}
 
-		// Cash
-		totalCash = totalCash.Add(decimalFromString(p.Cash))
+		pCash := decimalFromString(p.Cash)
+		pNetWorth := pEquity.Add(pCash)
 
-		// Realized gain sum
+		var pRealized decimal.Decimal
 		if r, err := h.queries.SumRealizedGainByPortfolio(c, p.ID); err == nil {
-			realized = realized.Add(decimalFromString(r))
+			pRealized = decimalFromString(r)
 		}
 
-		// Dividends
+		// Apply FX conversion to per-portfolio values
+		if fxRate != 1 {
+			pEquity = pEquity.Mul(fxRateD)
+			pInvested = pInvested.Mul(fxRateD)
+			pCash = pCash.Mul(fxRateD)
+			pUnrealized = pUnrealized.Mul(fxRateD)
+			pRealized = pRealized.Mul(fxRateD)
+			pNetWorth = pNetWorth.Mul(fxRateD)
+		}
+
+		breakdowns = append(breakdowns, portfolioBreakdown{
+			ID:            p.ID,
+			Name:          p.Name,
+			Cash:          pCash.StringFixed(2),
+			NetWorth:      pNetWorth.StringFixed(2),
+			TotalEquity:   pEquity.StringFixed(2),
+			TotalInvested: pInvested.StringFixed(2),
+			UnrealizedPnL: pUnrealized.StringFixed(2),
+			RealizedPnL:   pRealized.StringFixed(2),
+		})
+
+		totalEquity = totalEquity.Add(pEquity)
+		totalInvested = totalInvested.Add(pInvested)
+		totalCash = totalCash.Add(pCash)
+		unrealized = unrealized.Add(pUnrealized)
+		realized = realized.Add(pRealized)
+
 		if d, err := h.queries.SumDividendsByPortfolio(c, p.ID); err == nil {
-			totalDividends = totalDividends.Add(decimalFromString(d))
+			div := decimalFromString(d)
+			if fxRate != 1 {
+				div = div.Mul(fxRateD)
+			}
+			totalDividends = totalDividends.Add(div)
 		}
 
-		// Fees
 		if f, err := h.queries.SumFeesByPortfolio(c, p.ID); err == nil {
-			totalFees = totalFees.Add(decimalFromString(f))
+			fee := decimalFromString(f)
+			if fxRate != 1 {
+				fee = fee.Mul(fxRateD)
+			}
+			totalFees = totalFees.Add(fee)
 		}
 	}
 
 	netWorth := totalEquity.Add(totalCash)
-
-	// Apply FX conversion
-	if fxRate != 1 {
-		totalEquity = totalEquity.Mul(fxRateD)
-		totalInvested = totalInvested.Mul(fxRateD)
-		totalCash = totalCash.Mul(fxRateD)
-		unrealized = unrealized.Mul(fxRateD)
-		realized = realized.Mul(fxRateD)
-		totalDividends = totalDividends.Mul(fxRateD)
-		totalFees = totalFees.Mul(fxRateD)
-		netWorth = netWorth.Mul(fxRateD)
-	}
 
 	c.JSON(http.StatusOK, netWorthResponse{
 		Currency:       targetCurrency,
@@ -135,6 +180,7 @@ func (h *Handler) GetNetWorth(c *gin.Context) {
 		TotalDividends: totalDividends.StringFixed(2),
 		TotalFees:      totalFees.StringFixed(2),
 		FxRate:         fxRate,
+		Portfolios:     breakdowns,
 	})
 }
 

@@ -69,50 +69,81 @@ export default function TransactionsPage({ params }: { params: Promise<{ id: str
         <div className="space-y-2">
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10" />)}
         </div>
+      ) : (transactions || []).length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">No transactions found</p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Symbol</TableHead>
-              <TableHead>Side</TableHead>
-              <TableHead className="text-right">Qty</TableHead>
-              <TableHead className="text-right">Price</TableHead>
-              <TableHead className="text-right">Fee</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="text-right">Realized</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {(transactions || []).map((t) => (
-              <TableRow key={t.id}>
-                <TableCell className="text-xs text-muted-foreground">
-                  {new Date(t.transaction_time).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="font-medium">{t.symbol}</TableCell>
-                <TableCell>
-                  <Badge variant={t.side === 'BUY' ? 'default' : 'destructive'}>
-                    {t.side}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">{parseFloat(t.quantity).toFixed(4)}</TableCell>
-                <TableCell className="text-right">{parseFloat(t.price).toFixed(4)}</TableCell>
-                <TableCell className="text-right">{parseFloat(t.fee).toFixed(2)}</TableCell>
-                <TableCell className="text-right">{parseFloat(t.total_amount).toFixed(2)}</TableCell>
-                <TableCell className={`text-right ${parseFloat(t.realized_gain) >= 0 ? 'text-green-600' : 'text-destructive'}`}>
-                  {t.side === 'SELL' ? parseFloat(t.realized_gain).toFixed(2) : '—'}
-                </TableCell>
-              </TableRow>
-            ))}
-            {(transactions || []).length === 0 && (
+        <>
+          {/* Mobile card list */}
+          <div className="md:hidden space-y-2">
+            {(transactions || []).map((t) => {
+              const realized = parseFloat(t.realized_gain)
+              const realizedColor = realized > 0 ? 'text-green-600' : realized < 0 ? 'text-destructive' : 'text-muted-foreground'
+              return (
+                <div key={t.id} className="rounded-lg border p-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={t.side === 'BUY' ? 'default' : 'destructive'} className="text-xs">
+                        {t.side}
+                      </Badge>
+                      <span className="font-semibold text-sm">{t.symbol}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(t.transaction_time).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <p className="text-xs">
+                    {parseFloat(t.quantity).toFixed(4)} × {parseFloat(t.price).toFixed(2)} ={' '}
+                    <span className="font-medium">{parseFloat(t.total_amount).toFixed(2)}</span>
+                  </p>
+                  <div className="flex gap-4 text-xs">
+                    <span className="text-muted-foreground">Fee: {parseFloat(t.fee).toFixed(2)}</span>
+                    {t.side === 'SELL' && (
+                      <span className={realizedColor}>Realized: {realized.toFixed(2)}</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Desktop table */}
+          <Table className="hidden md:table">
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                  No transactions found
-                </TableCell>
+                <TableHead>Date</TableHead>
+                <TableHead>Symbol</TableHead>
+                <TableHead>Side</TableHead>
+                <TableHead className="text-right">Qty</TableHead>
+                <TableHead className="text-right">Price</TableHead>
+                <TableHead className="text-right">Fee</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Realized</TableHead>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {(transactions || []).map((t) => (
+                <TableRow key={t.id}>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {new Date(t.transaction_time).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell className="font-medium">{t.symbol}</TableCell>
+                  <TableCell>
+                    <Badge variant={t.side === 'BUY' ? 'default' : 'destructive'}>
+                      {t.side}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">{parseFloat(t.quantity).toFixed(4)}</TableCell>
+                  <TableCell className="text-right">{parseFloat(t.price).toFixed(4)}</TableCell>
+                  <TableCell className="text-right">{parseFloat(t.fee).toFixed(2)}</TableCell>
+                  <TableCell className="text-right">{parseFloat(t.total_amount).toFixed(2)}</TableCell>
+                  <TableCell className={`text-right ${parseFloat(t.realized_gain) > 0 ? 'text-green-600' : parseFloat(t.realized_gain) < 0 ? 'text-destructive' : ''}`}>
+                    {t.side === 'SELL' ? parseFloat(t.realized_gain).toFixed(2) : '—'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </>
       )}
     </div>
   )

@@ -2,7 +2,7 @@
 
 import { use, useState } from 'react'
 import Link from 'next/link'
-import { usePortfolio } from '@/hooks/use-portfolios'
+import { usePortfolio, usePortfolioRealized } from '@/hooks/use-portfolios'
 import { useHoldings } from '@/hooks/use-holdings'
 import { BuySellDialog } from '@/components/dialogs/buy-sell-dialog'
 import { CashFlowDialog } from '@/components/dialogs/cash-flow-dialog'
@@ -28,6 +28,7 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
   const { id } = use(params)
   const { data: portfolio, isLoading: pLoading } = usePortfolio(id)
   const { data: holdings, isLoading: hLoading } = useHoldings(id)
+  const { data: realizedData } = usePortfolioRealized(id)
   const [dialog, setDialog] = useState<DialogType>(null)
   const [selectedSymbol, setSelectedSymbol] = useState<string>()
 
@@ -88,6 +89,53 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
         </Link>
       </div>
 
+      {/* Summary stats */}
+      {holdings && portfolio && (() => {
+        const equity = holdings.reduce((s, h) => s + parseFloat(h.equity), 0)
+        const invested = holdings.reduce((s, h) => s + parseFloat(h.invested), 0)
+        const unrealized = holdings.reduce((s, h) => s + parseFloat(h.unrealized_pnl), 0)
+        const cash = parseFloat(portfolio.cash)
+        const netWorth = equity + cash
+        const realized = parseFloat(realizedData?.realized_pnl ?? '0')
+        const unrealizedPct = invested > 0 ? ((unrealized / invested) * 100).toFixed(1) : null
+        const realizedPct = invested > 0 ? ((realized / invested) * 100).toFixed(1) : null
+
+        const pnlColor = (val: number) =>
+          val > 0 ? 'text-green-600' : val < 0 ? 'text-destructive' : 'text-muted-foreground'
+
+        const fmtAmt = (val: number) =>
+          val.toLocaleString('en-US', { style: 'currency', currency: portfolio.currency, minimumFractionDigits: 2 })
+
+        return (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {[
+              { label: 'Net Worth', val: netWorth, pct: null },
+              { label: 'Equity', val: equity, pct: null },
+              { label: 'Invested', val: invested, pct: null },
+              { label: 'Cash', val: cash, pct: null },
+              { label: 'Unrealized P&L', val: unrealized, pct: unrealizedPct },
+              { label: 'Realized P&L', val: realized, pct: realizedPct },
+            ].map(({ label, val, pct }) => {
+              const isPL = label.includes('P&L')
+              const color = isPL ? pnlColor(val) : ''
+              return (
+                <Card key={label}>
+                  <CardHeader className="pb-1 pt-3 px-4">
+                    <CardTitle className="text-xs font-medium text-muted-foreground">{label}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-3">
+                    <p className={`text-sm font-semibold ${color}`}>{fmtAmt(val)}</p>
+                    {pct != null && (
+                      <p className={`text-xs mt-0.5 ${color}`}>{val >= 0 ? '+' : ''}{pct}%</p>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )
+      })()}
+
       {/* Holdings Table */}
       <Card>
         <CardHeader>
@@ -103,7 +151,47 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
               No holdings yet. Buy your first stock!
             </p>
           ) : (
-            <Table>
+            <>
+              {/* Mobile card list */}
+              <div className="md:hidden space-y-2">
+                {holdings!.map((h) => {
+                  const pnl = parseFloat(h.unrealized_pnl)
+                  const pnlColor = pnl > 0 ? 'text-green-600' : pnl < 0 ? 'text-destructive' : 'text-muted-foreground'
+                  return (
+                    <div key={h.id} className="rounded-lg border p-3 space-y-1.5">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-semibold text-sm">{h.symbol}</p>
+                          <p className="text-xs text-muted-foreground truncate max-w-40">{h.ticker_name}</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => { setSelectedSymbol(h.symbol); setDialog('sell') }}
+                        >
+                          Sell
+                        </Button>
+                      </div>
+                      <div className="flex gap-4 text-xs text-muted-foreground">
+                        <span>{parseFloat(h.shares).toFixed(4)} sh</span>
+                        <span>avg {parseFloat(h.avg_cost).toFixed(2)}</span>
+                        {h.live_price > 0 && <span>live {h.live_price.toFixed(2)}</span>}
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span>Equity <span className="font-medium text-foreground">{parseFloat(h.equity).toFixed(2)}</span></span>
+                        <span>Invested <span className="font-medium text-foreground">{parseFloat(h.invested).toFixed(2)}</span></span>
+                      </div>
+                      <div className={`text-xs font-medium ${pnlColor}`}>
+                        P&L {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} ({h.pnl_pct}%)
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Desktop table */}
+              <Table className="hidden md:table">
               <TableHeader>
                 <TableRow>
                   <TableHead>Symbol</TableHead>
@@ -120,7 +208,7 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
               <TableBody>
                 {holdings!.map((h) => {
                   const pnl = parseFloat(h.unrealized_pnl)
-                  const positive = pnl >= 0
+                  const pnlColor = pnl > 0 ? 'text-green-600' : pnl < 0 ? 'text-destructive' : 'text-muted-foreground'
                   return (
                     <TableRow key={h.id}>
                       <TableCell className="font-medium">
@@ -136,13 +224,13 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
                       <TableCell className="text-right">{h.live_price > 0 ? h.live_price.toFixed(4) : '—'}</TableCell>
                       <TableCell className="text-right">{parseFloat(h.equity).toFixed(2)}</TableCell>
                       <TableCell className="text-right">{parseFloat(h.invested).toFixed(2)}</TableCell>
-                      <TableCell className={`text-right ${positive ? 'text-green-600' : 'text-destructive'}`}>
+                      <TableCell className={`text-right ${pnlColor}`}>
                         <span className="flex items-center justify-end gap-1">
-                          {positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                          {pnl > 0 ? <TrendingUp className="h-3 w-3" /> : pnl < 0 ? <TrendingDown className="h-3 w-3" /> : null}
                           {pnl.toFixed(2)}
                         </span>
                       </TableCell>
-                      <TableCell className={`text-right ${positive ? 'text-green-600' : 'text-destructive'}`}>
+                      <TableCell className={`text-right ${pnlColor}`}>
                         {h.pnl_pct}%
                       </TableCell>
                       <TableCell>
@@ -162,6 +250,7 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
                 })}
               </TableBody>
             </Table>
+            </>
           )}
         </CardContent>
       </Card>

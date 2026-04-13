@@ -79,6 +79,17 @@ export interface Dividend {
   ticker_name: string
 }
 
+export interface PortfolioBreakdown {
+  id: number
+  name: string
+  cash: string
+  net_worth: string
+  total_equity: string
+  total_invested: string
+  unrealized_pnl: string
+  realized_pnl: string
+}
+
 export interface NetWorth {
   currency: string
   total_equity: string
@@ -90,6 +101,7 @@ export interface NetWorth {
   total_dividends: string
   total_fees: string
   fx_rate: number
+  portfolios: PortfolioBreakdown[]
 }
 
 export interface NetWorthSnapshot {
@@ -99,6 +111,18 @@ export interface NetWorthSnapshot {
   unrealized: string
   realized: string
   cash_balance: string
+}
+
+export interface PortfolioSnapshot {
+  id: number
+  portfolio_id: number
+  snapshot_date: string
+  total_equity: string
+  total_invested: string
+  cash_balance: string
+  unrealized: string
+  realized: string
+  currency: string
 }
 
 export interface StockSearchResult {

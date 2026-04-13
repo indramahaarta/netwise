@@ -41,8 +41,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-56 shrink-0 border-r bg-sidebar flex flex-col">
+      {/* Desktop sidebar — hidden on mobile */}
+      <aside className="hidden md:flex w-56 shrink-0 border-r bg-sidebar flex-col">
         <div className="px-4 py-5">
           <span className="text-lg font-bold tracking-tight">NetWise</span>
           {user && (
@@ -83,10 +83,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
+      {/* Mobile header — hidden on desktop */}
+      <header className="md:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-sidebar border-b flex items-center px-4 gap-2">
+        <span className="text-base font-bold tracking-tight">NetWise</span>
+        {user && (
+          <span className="text-xs text-muted-foreground truncate">{user.email}</span>
+        )}
+      </header>
+
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto pt-14 pb-16 md:pt-0 md:pb-0">
         {children}
       </main>
+
+      {/* Mobile bottom tab bar — hidden on desktop */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 h-16 bg-sidebar border-t flex items-center">
+        {navItems.map(({ href, label, icon: Icon }) => {
+          const active = pathname === href || pathname.startsWith(href + '/')
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${
+                active ? 'text-primary' : 'text-muted-foreground'
+              }`}
+            >
+              <Icon className="h-5 w-5" />
+              <span className="text-xs font-medium">{label}</span>
+            </Link>
+          )
+        })}
+      </nav>
     </div>
   )
 }

@@ -77,6 +77,7 @@ export default function DashboardPage() {
             const realizedPct = invested > 0
               ? ((parseFloat(nw.realized_pnl) / invested) * 100).toFixed(1)
               : null
+            const displayCurrency = (nw.currency || currency) as Currency
             return [
               { label: 'Net Worth', value: nw.net_worth },
               { label: 'Equity', value: nw.total_equity },
@@ -84,30 +85,33 @@ export default function DashboardPage() {
               { label: 'Cash', value: nw.total_cash },
               { label: 'Unrealized P&L', value: nw.unrealized_pnl, pct: unrealizedPct },
               { label: 'Realized P&L', value: nw.realized_pnl, pct: realizedPct },
-            ]
-          })().map(({ label, value, pct }) => {
-            const num = parseFloat(value)
-            const negative = num < 0
-            return (
-              <Card key={label}>
-                <CardHeader className="pb-1 pt-4 px-4">
-                  <CardTitle className="text-xs font-medium text-muted-foreground">
-                    {label}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-4 pb-4">
-                  <p className={`text-base font-semibold ${negative ? 'text-destructive' : ''}`}>
-                    {fmt(value, currency)}
-                  </p>
-                  {pct !== null && pct !== undefined && (
-                    <p className={`text-xs mt-0.5 ${negative ? 'text-destructive' : 'text-muted-foreground'}`}>
-                      {num >= 0 ? '+' : ''}{pct}%
+            ].map(({ label, value, pct }) => {
+              const num = parseFloat(value)
+              const isPL = label.includes('P&L')
+              const pnlColor = isPL
+                ? num > 0 ? 'text-green-600' : num < 0 ? 'text-destructive' : 'text-muted-foreground'
+                : ''
+              return (
+                <Card key={label}>
+                  <CardHeader className="pb-1 pt-4 px-4">
+                    <CardTitle className="text-xs font-medium text-muted-foreground">
+                      {label}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    <p className={`text-base font-semibold ${pnlColor}`}>
+                      {fmt(value, displayCurrency)}
                     </p>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })}
+                    {pct != null && (
+                      <p className={`text-xs mt-0.5 ${pnlColor}`}>
+                        {num >= 0 ? '+' : ''}{pct}%
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })
+          })()}
         </div>
       ) : null}
 
@@ -117,7 +121,7 @@ export default function DashboardPage() {
           <CardTitle className="text-sm">Net Worth Over Time</CardTitle>
         </CardHeader>
         <CardContent>
-          <NetWorthChart currency={currency} />
+          <NetWorthChart currency={currency} liveData={nw} portfolios={portfolios || []} />
         </CardContent>
       </Card>
 
@@ -143,28 +147,67 @@ export default function DashboardPage() {
           <p className="text-sm text-muted-foreground">No portfolios yet. Create one to get started.</p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {(portfolios || []).map((p) => (
-              <Link key={p.id} href={`/portfolio/${p.id}`}>
-                <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                  <CardContent className="pt-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="font-medium">{p.name}</p>
-                        <p className="text-xs text-muted-foreground">{p.currency}</p>
+            {(portfolios || []).map((p) => {
+              const stats = nw?.portfolios?.find((pb) => pb.id === p.id)
+              const displayCcy = (nw?.currency || currency) as Currency
+              const pnlColor = (val: number) =>
+                val > 0 ? 'text-green-600' : val < 0 ? 'text-destructive' : 'text-muted-foreground'
+              return (
+                <Link key={p.id} href={`/portfolio/${p.id}`}>
+                  <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                    <CardContent className="pt-4 pb-4 space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-medium">{p.name}</p>
+                          <p className="text-xs text-muted-foreground">{p.currency}</p>
+                        </div>
+                        <Badge variant="outline">{p.currency}</Badge>
                       </div>
-                      <Badge variant="outline">{p.currency}</Badge>
-                    </div>
-                    <p className="mt-2 text-lg font-semibold">
-                      {parseFloat(p.cash).toLocaleString('en-US', {
-                        style: 'currency',
-                        currency: p.currency,
-                      })}
-                      <span className="text-xs font-normal text-muted-foreground ml-1">cash</span>
-                    </p>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+
+                      {stats ? (
+                        <>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Net Worth</p>
+                            <p className="text-lg font-semibold">{fmt(stats.net_worth, displayCcy)}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                            <div>
+                              <span className="text-muted-foreground">Equity </span>
+                              <span className="font-medium">{fmt(stats.total_equity, displayCcy)}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Invested </span>
+                              <span className="font-medium">{fmt(stats.total_invested, displayCcy)}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Cash </span>
+                              <span className="font-medium">{fmt(stats.cash, displayCcy)}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Realized </span>
+                              <span className={`font-medium ${pnlColor(parseFloat(stats.realized_pnl))}`}>
+                                {fmt(stats.realized_pnl, displayCcy)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className={`text-xs font-medium ${pnlColor(parseFloat(stats.unrealized_pnl))}`}>
+                            Unrealized P&L {fmt(stats.unrealized_pnl, displayCcy)}
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-lg font-semibold">
+                          {parseFloat(p.cash).toLocaleString('en-US', {
+                            style: 'currency',
+                            currency: p.currency,
+                          })}
+                          <span className="text-xs font-normal text-muted-foreground ml-1">cash</span>
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Link>
+              )
+            })}
           </div>
         )}
       </div>

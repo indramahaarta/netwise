@@ -40,6 +40,15 @@ export function useUpdatePortfolio(id: number | string) {
   })
 }
 
+export function usePortfolioRealized(id: number | string) {
+  return useQuery<{ realized_pnl: string }>({
+    queryKey: ['portfolio-realized', id],
+    queryFn: () =>
+      api.get(`/api/v1/portfolios/${id}/realized`).then((r) => r.data),
+    enabled: !!id,
+  })
+}
+
 export function useDeletePortfolio() {
   const qc = useQueryClient()
   return useMutation({

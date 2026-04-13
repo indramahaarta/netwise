@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
-import type { NetWorth, NetWorthSnapshot, StockSearchResult } from '@/lib/types'
+import type { NetWorth, NetWorthSnapshot, PortfolioSnapshot, StockSearchResult } from '@/lib/types'
 
 export function useNetWorth(currency: 'USD' | 'IDR' = 'USD') {
   return useQuery<NetWorth>({
@@ -20,6 +20,17 @@ export function useNetWorthSnapshots(range: string) {
       api
         .get('/api/v1/networth/snapshots', { params: { range } })
         .then((r) => r.data),
+  })
+}
+
+export function usePortfolioSnapshots(portfolioId: string | number | null, range: string) {
+  return useQuery<PortfolioSnapshot[]>({
+    queryKey: ['portfolio-snapshots', portfolioId, range],
+    queryFn: () =>
+      api
+        .get(`/api/v1/portfolios/${portfolioId}/snapshots`, { params: { range } })
+        .then((r) => r.data),
+    enabled: !!portfolioId,
   })
 }
 

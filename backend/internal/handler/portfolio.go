@@ -3,6 +3,7 @@ package handler
 import (
 	"database/sql"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -115,8 +116,53 @@ func nullableString(s *string) sql.NullString {
 	return sql.NullString{String: *s, Valid: true}
 }
 
+func (h *Handler) GetPortfolioRealized(c *gin.Context) {
+	portfolioID := getPortfolioID(c)
+	realized, err := h.queries.SumRealizedGainByPortfolio(c, portfolioID)
+	if err != nil {
+		realized = "0"
+	}
+	c.JSON(http.StatusOK, gin.H{"realized_pnl": realized})
+}
+
 type setCashRequest struct {
 	Amount float64 `json:"amount" binding:"required,min=0"`
+}
+
+func (h *Handler) GetPortfolioSnapshots(c *gin.Context) {
+	portfolioID := getPortfolioID(c)
+	rangeParam := c.DefaultQuery("range", "1M")
+
+	now := time.Now()
+	var from time.Time
+	switch rangeParam {
+	case "1W":
+		from = now.AddDate(0, 0, -7)
+	case "1M":
+		from = now.AddDate(0, -1, 0)
+	case "3M":
+		from = now.AddDate(0, -3, 0)
+	case "YTD":
+		from = time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location())
+	case "1Y":
+		from = now.AddDate(-1, 0, 0)
+	case "5Y":
+		from = now.AddDate(-5, 0, 0)
+	default: // ALL
+		from = time.Date(2000, 1, 1, 0, 0, 0, 0, now.Location())
+	}
+
+	rows, err := h.queries.ListPortfolioSnapshots(c, db.ListPortfolioSnapshotsParams{
+		PortfolioID:    portfolioID,
+		SnapshotDate:   from,
+		SnapshotDate_2: now,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to load snapshots")
+		return
+	}
+
+	c.JSON(http.StatusOK, rows)
 }
 
 func (h *Handler) SetCash(c *gin.Context) {

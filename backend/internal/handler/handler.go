@@ -61,6 +61,8 @@ func RegisterProtectedRoutes(r *gin.RouterGroup, queries *db.Queries, cfg *confi
 			p.GET("", h.GetPortfolio)
 			p.PUT("", h.UpdatePortfolio)
 			p.DELETE("", h.DeletePortfolio)
+			p.GET("/realized", h.GetPortfolioRealized)
+			p.GET("/snapshots", h.GetPortfolioSnapshots)
 
 			p.POST("/deposit", h.Deposit)
 			p.POST("/withdraw", h.Withdraw)

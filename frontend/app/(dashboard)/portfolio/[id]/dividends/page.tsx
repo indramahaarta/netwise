@@ -50,38 +50,53 @@ export default function DividendsPage({ params }: { params: Promise<{ id: string
         <div className="space-y-2">
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10" />)}
         </div>
+      ) : (dividends || []).length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">No dividends recorded</p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Symbol</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead>Currency</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        <>
+          {/* Mobile card list */}
+          <div className="md:hidden space-y-2">
             {(dividends || []).map((d) => (
-              <TableRow key={d.id}>
-                <TableCell className="text-xs text-muted-foreground">
-                  {new Date(d.transaction_time).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="font-medium">{d.symbol}</TableCell>
-                <TableCell className="text-right text-green-600">
-                  +{parseFloat(d.amount).toFixed(4)}
-                </TableCell>
-                <TableCell>{d.currency}</TableCell>
-              </TableRow>
+              <div key={d.id} className="rounded-lg border p-3 flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-sm">{d.symbol}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(d.transaction_time).toLocaleDateString()}
+                  </p>
+                </div>
+                <p className="text-sm font-medium text-green-600">
+                  +{parseFloat(d.amount).toFixed(4)} {d.currency}
+                </p>
+              </div>
             ))}
-            {(dividends || []).length === 0 && (
+          </div>
+
+          {/* Desktop table */}
+          <Table className="hidden md:table">
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                  No dividends recorded
-                </TableCell>
+                <TableHead>Date</TableHead>
+                <TableHead>Symbol</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Currency</TableHead>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {(dividends || []).map((d) => (
+                <TableRow key={d.id}>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {new Date(d.transaction_time).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell className="font-medium">{d.symbol}</TableCell>
+                  <TableCell className="text-right text-green-600">
+                    +{parseFloat(d.amount).toFixed(4)}
+                  </TableCell>
+                  <TableCell>{d.currency}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </>
       )}
 
       {portfolio && (
