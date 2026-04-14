@@ -49,6 +49,28 @@ func RegisterProtectedRoutes(r *gin.RouterGroup, queries *db.Queries, cfg *confi
 		nw.GET("/snapshots", h.GetNetWorthSnapshots)
 	}
 
+	// Wallets
+	wallets := r.Group("/wallets")
+	{
+		wallets.GET("", h.ListWallets)
+		wallets.POST("", h.CreateWallet)
+		wallets.POST("/transfer", h.TransferBetweenWallets)
+		w := wallets.Group("/:id")
+		w.Use(h.walletOwnerMiddleware())
+		{
+			w.GET("", h.GetWallet)
+			w.PUT("", h.UpdateWallet)
+			w.DELETE("", h.DeleteWallet)
+			w.POST("/import", h.SetInitialBalance)
+			w.GET("/transactions", h.ListWalletTransactions)
+			w.POST("/transactions", h.AddWalletTransaction)
+			w.POST("/portfolio-deposit", h.WalletToPortfolio)
+			w.POST("/portfolio-withdraw", h.PortfolioToWallet)
+		}
+	}
+	r.GET("/wallet-categories", h.ListWalletCategories)
+	r.POST("/wallet-categories", h.CreateWalletCategory)
+
 	// Portfolios
 	portfolios := r.Group("/portfolios")
 	{

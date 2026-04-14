@@ -12,27 +12,56 @@ import (
 	"github.com/indramahaarta/netwise/internal/util"
 )
 
-// RunDailySnapshot generates portfolio_snapshot and ticker_snapshot rows for today.
+// RunDailySnapshot generates portfolio_snapshot, ticker_snapshot, and wallet_snapshot rows for today.
 func RunDailySnapshot(ctx context.Context, queries *db.Queries, cfg *config.Config) error {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
-
-	// Iterate all users and their portfolios
-	// We pull portfolios directly — no ListAllPortfolios query, so iterate per user.
-	// This is a best-effort approach: get all portfolios with their user.
-	// We'll add a ListAllPortfolios query here inline via raw approach.
-	// For simplicity, we query all portfolios directly.
 
 	portfolios, err := listAllPortfolios(ctx, queries)
 	if err != nil {
 		return err
 	}
-
 	for _, p := range portfolios {
 		if err := snapshotPortfolio(ctx, queries, cfg, p, today); err != nil {
 			log.Printf("snapshot error for portfolio %d: %v", p.ID, err)
 		}
 	}
+
+	// Snapshot wallets — fetch IDR→USD rate once for all wallets
+	var idrToUsd float64 = 1
+	if rate, err := GetFreeForexRate("IDR", "USD"); err == nil && rate > 0 {
+		idrToUsd = rate
+	}
+	idrToUsdD := decimal.NewFromFloat(idrToUsd)
+
+	wallets, err := queries.ListAllWallets(ctx)
+	if err != nil {
+		log.Printf("wallet snapshot: failed to list wallets: %v", err)
+		return nil
+	}
+	for _, w := range wallets {
+		if err := snapshotWallet(ctx, queries, w, idrToUsdD, today); err != nil {
+			log.Printf("wallet snapshot error for wallet %d: %v", w.ID, err)
+		}
+	}
+
 	return nil
+}
+
+func snapshotWallet(ctx context.Context, queries *db.Queries, w db.Wallet, idrToUsd decimal.Decimal, today time.Time) error {
+	balance, err := queries.GetWalletBalance(ctx, w.ID)
+	if err != nil {
+		return err
+	}
+	bal := decimalFromString(balance)
+	balUSD := bal.Mul(idrToUsd)
+
+	_, err = queries.UpsertWalletSnapshot(ctx, db.UpsertWalletSnapshotParams{
+		WalletID:     w.ID,
+		Balance:      bal.StringFixed(8),
+		BalanceUsd:   balUSD.StringFixed(8),
+		SnapshotDate: today,
+	})
+	return err
 }
 
 func snapshotPortfolio(ctx context.Context, queries *db.Queries, cfg *config.Config, p db.Portfolio, today time.Time) error {

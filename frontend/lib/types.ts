@@ -113,6 +113,47 @@ export interface NetWorthSnapshot {
   cash_balance: string
 }
 
+export interface Wallet {
+  id: number
+  user_id: number
+  name: string
+  currency: string
+  created_time: string
+  updated_time: string
+  balance?: string
+}
+
+export interface WalletCategory {
+  id: number
+  user_id: number | null
+  name: string
+  type: 'INCOME' | 'EXPENSE'
+  is_system: boolean
+}
+
+export interface WalletTransaction {
+  id: number
+  wallet_id: number
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'PORTFOLIO_DEPOSIT' | 'PORTFOLIO_WITHDRAWAL'
+  amount: string
+  category_id: number | null
+  related_wallet_id: number | null
+  related_portfolio_id: number | null
+  broker_rate: string | null
+  note: string | null
+  transaction_time: string
+  category_name: string | null
+  related_wallet_name: string | null
+}
+
+export interface WalletSnapshot {
+  id: number
+  wallet_id: number
+  balance: string
+  balance_usd: string
+  snapshot_date: string
+}
+
 export interface PortfolioSnapshot {
   id: number
   portfolio_id: number

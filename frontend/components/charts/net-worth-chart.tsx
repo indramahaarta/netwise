@@ -19,7 +19,7 @@ import type { NetWorth, Portfolio, PortfolioSnapshot } from '@/lib/types'
 const RANGES = ['1W', '1M', '3M', 'YTD', '1Y', '5Y', 'ALL'] as const
 
 const LINES = [
-  { key: 'netWorth', label: 'Net Worth', color: 'hsl(var(--primary))' },
+  { key: 'netWorth', label: 'Net Worth', color: '#3b82f6' },
   { key: 'equity', label: 'Equity', color: '#22c55e' },
   { key: 'invested', label: 'Invested', color: '#f59e0b' },
   { key: 'cash', label: 'Cash', color: '#06b6d4' },
@@ -326,7 +326,7 @@ export function NetWorthChart({ currency, liveData, portfolios = [] }: Props) {
               width={70}
             />
             <Tooltip
-              formatter={(v: number, name: string) => [formatValue(v, currency), name]}
+              formatter={(v, name) => [formatValue(Number(v), currency), name]}
               contentStyle={{
                 background: 'hsl(var(--popover))',
                 border: '1px solid hsl(var(--border))',

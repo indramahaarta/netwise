@@ -6,6 +6,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
@@ -14,8 +15,12 @@ type Querier interface {
 	CreatePortfolio(ctx context.Context, arg CreatePortfolioParams) (Portfolio, error)
 	CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	CreateWallet(ctx context.Context, arg CreateWalletParams) (Wallet, error)
+	CreateWalletCategory(ctx context.Context, arg CreateWalletCategoryParams) (WalletCategory, error)
+	CreateWalletTransaction(ctx context.Context, arg CreateWalletTransactionParams) (WalletTransaction, error)
 	DeleteHolding(ctx context.Context, arg DeleteHoldingParams) error
 	DeletePortfolio(ctx context.Context, arg DeletePortfolioParams) error
+	DeleteWallet(ctx context.Context, arg DeleteWalletParams) error
 	GetHolding(ctx context.Context, arg GetHoldingParams) (Holding, error)
 	GetOrCreateTicker(ctx context.Context, arg GetOrCreateTickerParams) (Ticker, error)
 	GetPortfolio(ctx context.Context, id int64) (Portfolio, error)
@@ -25,7 +30,12 @@ type Querier interface {
 	GetTransaction(ctx context.Context, arg GetTransactionParams) (GetTransactionRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id int64) (User, error)
+	GetWallet(ctx context.Context, id int64) (Wallet, error)
+	GetWalletBalance(ctx context.Context, walletID int64) (string, error)
+	GetWalletCategoryByName(ctx context.Context, arg GetWalletCategoryByNameParams) (WalletCategory, error)
+	GetWalletForUser(ctx context.Context, arg GetWalletForUserParams) (Wallet, error)
 	ListAllPortfolios(ctx context.Context) ([]Portfolio, error)
+	ListAllWallets(ctx context.Context) ([]Wallet, error)
 	ListCashFlows(ctx context.Context, arg ListCashFlowsParams) ([]CashFlow, error)
 	ListDividends(ctx context.Context, arg ListDividendsParams) ([]ListDividendsRow, error)
 	ListHoldingsByPortfolio(ctx context.Context, portfolioID int64) ([]ListHoldingsByPortfolioRow, error)
@@ -33,15 +43,21 @@ type Querier interface {
 	ListPortfolioSnapshots(ctx context.Context, arg ListPortfolioSnapshotsParams) ([]PortfolioSnapshot, error)
 	ListPortfoliosByUser(ctx context.Context, userID int64) ([]Portfolio, error)
 	ListTransactions(ctx context.Context, arg ListTransactionsParams) ([]ListTransactionsRow, error)
+	ListWalletCategories(ctx context.Context, userID sql.NullInt64) ([]WalletCategory, error)
+	ListWalletSnapshots(ctx context.Context, arg ListWalletSnapshotsParams) ([]WalletSnapshot, error)
+	ListWalletTransactions(ctx context.Context, arg ListWalletTransactionsParams) ([]ListWalletTransactionsRow, error)
+	ListWalletsByUser(ctx context.Context, userID int64) ([]Wallet, error)
 	SumDividendsByPortfolio(ctx context.Context, portfolioID int64) (string, error)
 	SumFeesByPortfolio(ctx context.Context, portfolioID int64) (string, error)
 	SumRealizedGainByPortfolio(ctx context.Context, portfolioID int64) (string, error)
 	UpdatePortfolio(ctx context.Context, arg UpdatePortfolioParams) (Portfolio, error)
 	UpdatePortfolioCash(ctx context.Context, arg UpdatePortfolioCashParams) (Portfolio, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
+	UpdateWalletName(ctx context.Context, arg UpdateWalletNameParams) (Wallet, error)
 	UpsertHolding(ctx context.Context, arg UpsertHoldingParams) (Holding, error)
 	UpsertPortfolioSnapshot(ctx context.Context, arg UpsertPortfolioSnapshotParams) (PortfolioSnapshot, error)
 	UpsertTickerSnapshot(ctx context.Context, arg UpsertTickerSnapshotParams) (TickerSnapshot, error)
+	UpsertWalletSnapshot(ctx context.Context, arg UpsertWalletSnapshotParams) (WalletSnapshot, error)
 }
 
 var _ Querier = (*Queries)(nil)

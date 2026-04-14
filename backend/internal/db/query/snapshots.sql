@@ -29,17 +29,43 @@ ON CONFLICT (portfolio_id, ticker_id, snapshot_date) DO UPDATE
 RETURNING *;
 
 -- name: ListNetWorthSnapshots :many
+WITH portfolio_daily AS (
+    SELECT ps.snapshot_date,
+           SUM(ps.total_equity + ps.cash_balance) AS portfolio_nw,
+           SUM(ps.total_invested)                  AS total_invested,
+           SUM(ps.unrealized)                      AS unrealized,
+           SUM(ps.realized)                        AS realized,
+           SUM(ps.cash_balance)                    AS portfolio_cash
+    FROM portfolio_snapshot ps
+    JOIN portfolio p ON p.id = ps.portfolio_id
+    WHERE p.user_id = $1
+      AND ps.snapshot_date >= $2
+      AND ps.snapshot_date <= $3
+    GROUP BY ps.snapshot_date
+),
+wallet_daily AS (
+    SELECT ws.snapshot_date,
+           SUM(ws.balance_usd) AS wallet_usd
+    FROM wallet_snapshot ws
+    JOIN wallet w ON w.id = ws.wallet_id
+    WHERE w.user_id = $1
+      AND ws.snapshot_date >= $2
+      AND ws.snapshot_date <= $3
+    GROUP BY ws.snapshot_date
+),
+all_dates AS (
+    SELECT snapshot_date FROM portfolio_daily
+    UNION
+    SELECT snapshot_date FROM wallet_daily
+)
 SELECT
-    ps.snapshot_date,
-    COALESCE(SUM(ps.total_equity + ps.cash_balance), 0)::NUMERIC AS net_worth,
-    COALESCE(SUM(ps.total_invested), 0)::NUMERIC                 AS total_invested,
-    COALESCE(SUM(ps.unrealized), 0)::NUMERIC                     AS unrealized,
-    COALESCE(SUM(ps.realized), 0)::NUMERIC                       AS realized,
-    COALESCE(SUM(ps.cash_balance), 0)::NUMERIC                   AS cash_balance
-FROM portfolio_snapshot ps
-JOIN portfolio p ON p.id = ps.portfolio_id
-WHERE p.user_id = $1
-  AND ps.snapshot_date >= $2
-  AND ps.snapshot_date <= $3
-GROUP BY ps.snapshot_date
-ORDER BY ps.snapshot_date ASC;
+    d.snapshot_date,
+    (COALESCE(pd.portfolio_nw, 0)   + COALESCE(wd.wallet_usd, 0))::NUMERIC AS net_worth,
+    COALESCE(pd.total_invested, 0)::NUMERIC                                 AS total_invested,
+    COALESCE(pd.unrealized, 0)::NUMERIC                                     AS unrealized,
+    COALESCE(pd.realized, 0)::NUMERIC                                       AS realized,
+    (COALESCE(pd.portfolio_cash, 0) + COALESCE(wd.wallet_usd, 0))::NUMERIC AS cash_balance
+FROM all_dates d
+LEFT JOIN portfolio_daily pd ON pd.snapshot_date = d.snapshot_date
+LEFT JOIN wallet_daily    wd ON wd.snapshot_date = d.snapshot_date
+ORDER BY d.snapshot_date ASC;

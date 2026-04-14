@@ -108,3 +108,41 @@ type User struct {
 	UpdatedTime   time.Time      `json:"updated_time"`
 	CreatedTime   time.Time      `json:"created_time"`
 }
+
+type Wallet struct {
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"user_id"`
+	Name        string    `json:"name"`
+	Currency    string    `json:"currency"`
+	CreatedTime time.Time `json:"created_time"`
+	UpdatedTime time.Time `json:"updated_time"`
+}
+
+type WalletCategory struct {
+	ID       int64         `json:"id"`
+	UserID   sql.NullInt64 `json:"user_id"`
+	Name     string        `json:"name"`
+	Type     string        `json:"type"`
+	IsSystem bool          `json:"is_system"`
+}
+
+type WalletSnapshot struct {
+	ID           int64     `json:"id"`
+	WalletID     int64     `json:"wallet_id"`
+	Balance      string    `json:"balance"`
+	BalanceUsd   string    `json:"balance_usd"`
+	SnapshotDate time.Time `json:"snapshot_date"`
+}
+
+type WalletTransaction struct {
+	ID                 int64          `json:"id"`
+	WalletID           int64          `json:"wallet_id"`
+	Type               string         `json:"type"`
+	Amount             string         `json:"amount"`
+	CategoryID         sql.NullInt64  `json:"category_id"`
+	RelatedWalletID    sql.NullInt64  `json:"related_wallet_id"`
+	RelatedPortfolioID sql.NullInt64  `json:"related_portfolio_id"`
+	BrokerRate         sql.NullString `json:"broker_rate"`
+	Note               sql.NullString `json:"note"`
+	TransactionTime    time.Time      `json:"transaction_time"`
+}

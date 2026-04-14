@@ -1,0 +1,650 @@
+package handler
+
+import (
+	"database/sql"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
+
+	db "github.com/indramahaarta/netwise/internal/db/sqlc"
+	"github.com/indramahaarta/netwise/internal/middleware"
+)
+
+// walletOwnerMiddleware verifies the wallet belongs to the requesting user.
+func (h *Handler) walletOwnerMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		walletID := paramInt64(c, "id")
+		userID := middleware.GetUserID(c)
+
+		_, err := h.queries.GetWalletForUser(c, db.GetWalletForUserParams{
+			ID:     walletID,
+			UserID: userID,
+		})
+		if err != nil {
+			respondNotFound(c, "wallet")
+			c.Abort()
+			return
+		}
+		c.Set("wallet_id", walletID)
+		c.Next()
+	}
+}
+
+func getWalletID(c *gin.Context) int64 {
+	v, _ := c.Get("wallet_id")
+	id, _ := v.(int64)
+	return id
+}
+
+// --- Wallet CRUD ---
+
+type createWalletRequest struct {
+	Name string `json:"name" binding:"required,min=1,max=100"`
+}
+
+func (h *Handler) ListWallets(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	wallets, err := h.queries.ListWalletsByUser(c, userID)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to list wallets")
+		return
+	}
+
+	// Enrich each wallet with its computed balance
+	result := make([]walletResponse, 0, len(wallets))
+	for _, w := range wallets {
+		balance, _ := h.queries.GetWalletBalance(c, w.ID)
+		result = append(result, walletResponse{Wallet: w, Balance: balance})
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) CreateWallet(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	var req createWalletRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	wallet, err := h.queries.CreateWallet(c, db.CreateWalletParams{
+		UserID:   userID,
+		Name:     req.Name,
+		Currency: "IDR",
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to create wallet")
+		return
+	}
+
+	c.JSON(http.StatusCreated, wallet)
+}
+
+type walletResponse struct {
+	db.Wallet
+	Balance string `json:"balance"`
+}
+
+func (h *Handler) GetWallet(c *gin.Context) {
+	walletID := getWalletID(c)
+
+	wallet, err := h.queries.GetWallet(c, walletID)
+	if err != nil {
+		respondNotFound(c, "wallet")
+		return
+	}
+
+	balance, _ := h.queries.GetWalletBalance(c, walletID)
+	c.JSON(http.StatusOK, walletResponse{Wallet: wallet, Balance: balance})
+}
+
+type updateWalletRequest struct {
+	Name string `json:"name" binding:"required,min=1,max=100"`
+}
+
+func (h *Handler) UpdateWallet(c *gin.Context) {
+	walletID := getWalletID(c)
+
+	var req updateWalletRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	wallet, err := h.queries.UpdateWalletName(c, db.UpdateWalletNameParams{
+		ID:   walletID,
+		Name: req.Name,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to update wallet")
+		return
+	}
+
+	c.JSON(http.StatusOK, wallet)
+}
+
+func (h *Handler) DeleteWallet(c *gin.Context) {
+	walletID := getWalletID(c)
+	userID := middleware.GetUserID(c)
+
+	if err := h.queries.DeleteWallet(c, db.DeleteWalletParams{
+		ID:     walletID,
+		UserID: userID,
+	}); err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to delete wallet")
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// --- Transactions ---
+
+type addTransactionRequest struct {
+	Type       string  `json:"type" binding:"required,oneof=INCOME EXPENSE"`
+	Amount     float64 `json:"amount" binding:"required,gt=0"`
+	CategoryID int64   `json:"category_id" binding:"required"`
+	Note       string  `json:"note"`
+}
+
+// SetInitialBalance creates an INCOME transaction with the "Initial Balance" system category.
+func (h *Handler) SetInitialBalance(c *gin.Context) {
+	walletID := getWalletID(c)
+	userID := middleware.GetUserID(c)
+
+	var req struct {
+		Amount float64 `json:"amount" binding:"required,gt=0"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	cat, err := h.queries.GetWalletCategoryByName(c, db.GetWalletCategoryByNameParams{
+		Name:   "Initial Balance",
+		UserID: sql.NullInt64{Int64: userID, Valid: true},
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "initial balance category not found")
+		return
+	}
+
+	amt := decimal.NewFromFloat(req.Amount)
+	tx, err := h.queries.CreateWalletTransaction(c, db.CreateWalletTransactionParams{
+		WalletID:            walletID,
+		Type:                "INCOME",
+		Amount:              amt.StringFixed(8),
+		CategoryID:          sql.NullInt64{Int64: cat.ID, Valid: true},
+		RelatedWalletID:     sql.NullInt64{},
+		RelatedPortfolioID:  sql.NullInt64{},
+		BrokerRate:          sql.NullString{},
+		Note:                sql.NullString{String: "Initial balance import", Valid: true},
+		TransactionTime:     time.Now(),
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to set initial balance")
+		return
+	}
+
+	c.JSON(http.StatusCreated, tx)
+}
+
+type walletTxResponse struct {
+	ID                 int64   `json:"id"`
+	WalletID           int64   `json:"wallet_id"`
+	Type               string  `json:"type"`
+	Amount             string  `json:"amount"`
+	CategoryID         *int64  `json:"category_id"`
+	RelatedWalletID    *int64  `json:"related_wallet_id"`
+	RelatedPortfolioID *int64  `json:"related_portfolio_id"`
+	BrokerRate         *string `json:"broker_rate"`
+	Note               *string `json:"note"`
+	TransactionTime    string  `json:"transaction_time"`
+	CategoryName       *string `json:"category_name"`
+	RelatedWalletName  *string `json:"related_wallet_name"`
+}
+
+func (h *Handler) ListWalletTransactions(c *gin.Context) {
+	walletID := getWalletID(c)
+	limit := queryInt(c, "limit", 50)
+	offset := queryInt(c, "offset", 0)
+
+	txs, err := h.queries.ListWalletTransactions(c, db.ListWalletTransactionsParams{
+		WalletID: walletID,
+		Limit:    limit,
+		Offset:   offset,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to list transactions")
+		return
+	}
+
+	result := make([]walletTxResponse, len(txs))
+	for i, tx := range txs {
+		var catName *string
+		if tx.CategoryName.Valid {
+			s := tx.CategoryName.String
+			catName = &s
+		}
+		var relName *string
+		if tx.RelatedWalletName.Valid {
+			s := tx.RelatedWalletName.String
+			relName = &s
+		}
+		var brokerRate *string
+		if tx.BrokerRate.Valid {
+			s := tx.BrokerRate.String
+			brokerRate = &s
+		}
+		var note *string
+		if tx.Note.Valid {
+			s := tx.Note.String
+			note = &s
+		}
+		var catID *int64
+		if tx.CategoryID.Valid {
+			v := tx.CategoryID.Int64
+			catID = &v
+		}
+		var relWalletID *int64
+		if tx.RelatedWalletID.Valid {
+			v := tx.RelatedWalletID.Int64
+			relWalletID = &v
+		}
+		var relPortfolioID *int64
+		if tx.RelatedPortfolioID.Valid {
+			v := tx.RelatedPortfolioID.Int64
+			relPortfolioID = &v
+		}
+		result[i] = walletTxResponse{
+			ID:                 tx.ID,
+			WalletID:           tx.WalletID,
+			Type:               tx.Type,
+			Amount:             tx.Amount,
+			CategoryID:         catID,
+			RelatedWalletID:    relWalletID,
+			RelatedPortfolioID: relPortfolioID,
+			BrokerRate:         brokerRate,
+			Note:               note,
+			TransactionTime:    tx.TransactionTime.Format("2006-01-02T15:04:05Z07:00"),
+			CategoryName:       catName,
+			RelatedWalletName:  relName,
+		}
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) AddWalletTransaction(c *gin.Context) {
+	walletID := getWalletID(c)
+
+	var req addTransactionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	amt := decimal.NewFromFloat(req.Amount)
+
+	// For EXPENSE, verify sufficient balance
+	if req.Type == "EXPENSE" {
+		balance, _ := h.queries.GetWalletBalance(c, walletID)
+		bal := decimalFromString(balance)
+		if bal.LessThan(amt) {
+			respondError(c, http.StatusBadRequest, "insufficient wallet balance")
+			return
+		}
+	}
+
+	note := sql.NullString{}
+	if req.Note != "" {
+		note = sql.NullString{String: req.Note, Valid: true}
+	}
+
+	tx, err := h.queries.CreateWalletTransaction(c, db.CreateWalletTransactionParams{
+		WalletID:           walletID,
+		Type:               req.Type,
+		Amount:             amt.StringFixed(8),
+		CategoryID:         sql.NullInt64{Int64: req.CategoryID, Valid: true},
+		RelatedWalletID:    sql.NullInt64{},
+		RelatedPortfolioID: sql.NullInt64{},
+		BrokerRate:         sql.NullString{},
+		Note:               note,
+		TransactionTime:    time.Now(),
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to add transaction")
+		return
+	}
+
+	c.JSON(http.StatusCreated, tx)
+}
+
+// --- Wallet-to-wallet transfer ---
+
+type transferRequest struct {
+	FromWalletID int64   `json:"from_wallet_id" binding:"required"`
+	ToWalletID   int64   `json:"to_wallet_id" binding:"required"`
+	Amount       float64 `json:"amount" binding:"required,gt=0"`
+	Note         string  `json:"note"`
+}
+
+func (h *Handler) TransferBetweenWallets(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	var req transferRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.FromWalletID == req.ToWalletID {
+		respondError(c, http.StatusBadRequest, "cannot transfer to the same wallet")
+		return
+	}
+
+	// Verify ownership of both wallets
+	if _, err := h.queries.GetWalletForUser(c, db.GetWalletForUserParams{
+		ID: req.FromWalletID, UserID: userID,
+	}); err != nil {
+		respondNotFound(c, "source wallet")
+		return
+	}
+	if _, err := h.queries.GetWalletForUser(c, db.GetWalletForUserParams{
+		ID: req.ToWalletID, UserID: userID,
+	}); err != nil {
+		respondNotFound(c, "destination wallet")
+		return
+	}
+
+	amt := decimal.NewFromFloat(req.Amount)
+
+	// Check source balance
+	srcBalance, _ := h.queries.GetWalletBalance(c, req.FromWalletID)
+	if decimalFromString(srcBalance).LessThan(amt) {
+		respondError(c, http.StatusBadRequest, "insufficient wallet balance")
+		return
+	}
+
+	note := sql.NullString{}
+	if req.Note != "" {
+		note = sql.NullString{String: req.Note, Valid: true}
+	}
+
+	// TRANSFER_OUT on source
+	out, err := h.queries.CreateWalletTransaction(c, db.CreateWalletTransactionParams{
+		WalletID:           req.FromWalletID,
+		Type:               "TRANSFER_OUT",
+		Amount:             amt.StringFixed(8),
+		CategoryID:         sql.NullInt64{},
+		RelatedWalletID:    sql.NullInt64{Int64: req.ToWalletID, Valid: true},
+		RelatedPortfolioID: sql.NullInt64{},
+		BrokerRate:         sql.NullString{},
+		Note:               note,
+		TransactionTime:    time.Now(),
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to create transfer")
+		return
+	}
+
+	// TRANSFER_IN on destination
+	if _, err := h.queries.CreateWalletTransaction(c, db.CreateWalletTransactionParams{
+		WalletID:           req.ToWalletID,
+		Type:               "TRANSFER_IN",
+		Amount:             amt.StringFixed(8),
+		CategoryID:         sql.NullInt64{},
+		RelatedWalletID:    sql.NullInt64{Int64: req.FromWalletID, Valid: true},
+		RelatedPortfolioID: sql.NullInt64{},
+		BrokerRate:         sql.NullString{},
+		Note:               note,
+		TransactionTime:    time.Now(),
+	}); err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to create transfer")
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"transfer_out": out, "amount": amt.StringFixed(8)})
+}
+
+// --- Portfolio transfers ---
+
+type walletToPortfolioRequest struct {
+	PortfolioID  int64   `json:"portfolio_id" binding:"required"`
+	SourceAmount float64 `json:"source_amount" binding:"required,gt=0"` // IDR
+	BrokerRate   float64 `json:"broker_rate" binding:"required,gt=0"`
+}
+
+// WalletToPortfolio moves IDR from a wallet into a portfolio's cash.
+// target_amount = source_amount / broker_rate
+func (h *Handler) WalletToPortfolio(c *gin.Context) {
+	walletID := getWalletID(c)
+	userID := middleware.GetUserID(c)
+
+	var req walletToPortfolioRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Verify portfolio ownership
+	portfolio, err := h.queries.GetPortfolioForUser(c, db.GetPortfolioForUserParams{
+		ID:     req.PortfolioID,
+		UserID: userID,
+	})
+	if err != nil {
+		respondNotFound(c, "portfolio")
+		return
+	}
+
+	sourceAmt := decimal.NewFromFloat(req.SourceAmount)
+	rate := decimal.NewFromFloat(req.BrokerRate)
+	targetAmt := sourceAmt.Div(rate)
+
+	// Check wallet balance
+	balance, _ := h.queries.GetWalletBalance(c, walletID)
+	if decimalFromString(balance).LessThan(sourceAmt) {
+		respondError(c, http.StatusBadRequest, "insufficient wallet balance")
+		return
+	}
+
+	// Deduct from wallet
+	if _, err := h.queries.CreateWalletTransaction(c, db.CreateWalletTransactionParams{
+		WalletID:           walletID,
+		Type:               "PORTFOLIO_DEPOSIT",
+		Amount:             sourceAmt.StringFixed(8),
+		CategoryID:         sql.NullInt64{},
+		RelatedWalletID:    sql.NullInt64{},
+		RelatedPortfolioID: sql.NullInt64{Int64: req.PortfolioID, Valid: true},
+		BrokerRate:         sql.NullString{String: rate.StringFixed(8), Valid: true},
+		Note:               sql.NullString{},
+		TransactionTime:    time.Now(),
+	}); err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to record wallet transaction")
+		return
+	}
+
+	// Add to portfolio cash
+	currentCash := decimalFromString(portfolio.Cash)
+	newCash := currentCash.Add(targetAmt)
+	if _, err := h.queries.UpdatePortfolioCash(c, db.UpdatePortfolioCashParams{
+		ID:   req.PortfolioID,
+		Cash: newCash.StringFixed(8),
+	}); err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to update portfolio cash")
+		return
+	}
+
+	// Record cash_flow on portfolio side
+	cf, err := h.queries.CreateCashFlow(c, db.CreateCashFlowParams{
+		PortfolioID:     req.PortfolioID,
+		Type:            "DEPOSIT",
+		SourceAmount:    sourceAmt.StringFixed(8),
+		SourceCurrency:  "IDR",
+		TargetAmount:    targetAmt.StringFixed(8),
+		TargetCurrency:  portfolio.Currency,
+		BrokerRate:      sql.NullString{String: rate.StringFixed(8), Valid: true},
+		TransactionTime: time.Now(),
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to record cash flow")
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"cash_flow":    cf,
+		"cash_balance": newCash.StringFixed(2),
+	})
+}
+
+type portfolioToWalletRequest struct {
+	PortfolioID  int64   `json:"portfolio_id" binding:"required"`
+	TargetAmount float64 `json:"target_amount" binding:"required,gt=0"` // portfolio currency units
+	BrokerRate   float64 `json:"broker_rate" binding:"required,gt=0"`
+}
+
+// PortfolioToWallet moves cash from a portfolio back to a wallet in IDR.
+// idr_received = target_amount * broker_rate
+func (h *Handler) PortfolioToWallet(c *gin.Context) {
+	walletID := getWalletID(c)
+	userID := middleware.GetUserID(c)
+
+	var req portfolioToWalletRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Verify portfolio ownership
+	portfolio, err := h.queries.GetPortfolioForUser(c, db.GetPortfolioForUserParams{
+		ID:     req.PortfolioID,
+		UserID: userID,
+	})
+	if err != nil {
+		respondNotFound(c, "portfolio")
+		return
+	}
+
+	targetAmt := decimal.NewFromFloat(req.TargetAmount)
+	rate := decimal.NewFromFloat(req.BrokerRate)
+	idrAmt := targetAmt.Mul(rate) // IDR received by wallet
+
+	// Check portfolio cash
+	currentCash := decimalFromString(portfolio.Cash)
+	if currentCash.LessThan(targetAmt) {
+		respondError(c, http.StatusBadRequest, "insufficient portfolio cash")
+		return
+	}
+
+	// Deduct from portfolio cash
+	newCash := currentCash.Sub(targetAmt)
+	if _, err := h.queries.UpdatePortfolioCash(c, db.UpdatePortfolioCashParams{
+		ID:   req.PortfolioID,
+		Cash: newCash.StringFixed(8),
+	}); err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to update portfolio cash")
+		return
+	}
+
+	// Record cash_flow on portfolio side
+	cf, err := h.queries.CreateCashFlow(c, db.CreateCashFlowParams{
+		PortfolioID:     req.PortfolioID,
+		Type:            "WITHDRAWAL",
+		SourceAmount:    targetAmt.StringFixed(8),
+		SourceCurrency:  portfolio.Currency,
+		TargetAmount:    idrAmt.StringFixed(8),
+		TargetCurrency:  "IDR",
+		BrokerRate:      sql.NullString{String: rate.StringFixed(8), Valid: true},
+		TransactionTime: time.Now(),
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to record cash flow")
+		return
+	}
+
+	// Add IDR to wallet
+	if _, err := h.queries.CreateWalletTransaction(c, db.CreateWalletTransactionParams{
+		WalletID:           walletID,
+		Type:               "PORTFOLIO_WITHDRAWAL",
+		Amount:             idrAmt.StringFixed(8),
+		CategoryID:         sql.NullInt64{},
+		RelatedWalletID:    sql.NullInt64{},
+		RelatedPortfolioID: sql.NullInt64{Int64: req.PortfolioID, Valid: true},
+		BrokerRate:         sql.NullString{String: rate.StringFixed(8), Valid: true},
+		Note:               sql.NullString{},
+		TransactionTime:    time.Now(),
+	}); err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to record wallet transaction")
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"cash_flow":    cf,
+		"cash_balance": newCash.StringFixed(2),
+	})
+}
+
+// --- Categories ---
+
+type walletCategoryResponse struct {
+	ID       int64   `json:"id"`
+	UserID   *int64  `json:"user_id"`
+	Name     string  `json:"name"`
+	Type     string  `json:"type"`
+	IsSystem bool    `json:"is_system"`
+}
+
+func (h *Handler) ListWalletCategories(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	cats, err := h.queries.ListWalletCategories(c, sql.NullInt64{Int64: userID, Valid: true})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to list categories")
+		return
+	}
+	result := make([]walletCategoryResponse, len(cats))
+	for i, cat := range cats {
+		var uid *int64
+		if cat.UserID.Valid {
+			v := cat.UserID.Int64
+			uid = &v
+		}
+		result[i] = walletCategoryResponse{
+			ID:       cat.ID,
+			UserID:   uid,
+			Name:     cat.Name,
+			Type:     cat.Type,
+			IsSystem: cat.IsSystem,
+		}
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+type createCategoryRequest struct {
+	Name string `json:"name" binding:"required,min=1,max=100"`
+	Type string `json:"type" binding:"required,oneof=INCOME EXPENSE"`
+}
+
+func (h *Handler) CreateWalletCategory(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+
+	var req createCategoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	cat, err := h.queries.CreateWalletCategory(c, db.CreateWalletCategoryParams{
+		UserID: sql.NullInt64{Int64: userID, Valid: true},
+		Name:   req.Name,
+		Type:   req.Type,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to create category")
+		return
+	}
+
+	c.JSON(http.StatusCreated, cat)
+}

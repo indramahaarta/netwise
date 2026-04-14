@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useState } from 'react'
+import { use, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSetCash, useAddHoldingDirect } from '@/hooks/use-holdings'
 import { useStockSearch } from '@/hooks/use-networth'
@@ -21,19 +21,18 @@ interface HoldingRow {
   error: string
 }
 
-let nextId = 0
-
-function emptyRow(): HoldingRow {
-  return { id: nextId++, symbol: '', shares: '', avgCost: '', searchQuery: '', error: '' }
-}
-
 export default function ImportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
   const { data: portfolio } = usePortfolio(id)
 
+  const nextIdRef = useRef(0)
+  function emptyRow(): HoldingRow {
+    return { id: nextIdRef.current++, symbol: '', shares: '', avgCost: '', searchQuery: '', error: '' }
+  }
+
   const [cashAmount, setCashAmount] = useState('')
-  const [rows, setRows] = useState<HoldingRow[]>([emptyRow()])
+  const [rows, setRows] = useState<HoldingRow[]>(() => [emptyRow()])
   const [saving, setSaving] = useState(false)
 
   const setCash = useSetCash(id)
@@ -155,7 +154,7 @@ export default function ImportPage({ params }: { params: Promise<{ id: string }>
                     <div className="absolute z-10 w-full mt-1 border rounded-md bg-background shadow-md max-h-40 overflow-y-auto">
                       {searchResults.result.slice(0, 6).map((r) => (
                         <button
-                          key={r.symbol}
+                          key={r.symbol + ':' + r.type}
                           type="button"
                           className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center justify-between"
                           onMouseDown={(e) => e.preventDefault()}
@@ -191,7 +190,7 @@ export default function ImportPage({ params }: { params: Promise<{ id: string }>
                     <div className="absolute z-10 w-full mt-1 border rounded-md bg-background shadow-md max-h-40 overflow-y-auto">
                       {searchResults.result.slice(0, 6).map((r) => (
                         <button
-                          key={r.symbol}
+                          key={r.symbol + ':' + r.type}
                           type="button"
                           className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center justify-between"
                           onMouseDown={(e) => e.preventDefault()}

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -61,6 +62,74 @@ func (h *Handler) GetNetWorth(c *gin.Context) {
 		finnhubKey, _ = util.DecryptAES(user.FinnhubApiKey.String, h.cfg.AESKey)
 	}
 
+	// --- Forex rate (cache-first, 1-hour TTL) ---
+	var fxRate float64 = 1
+	if targetCurrency != "USD" {
+		fxPair := "USD_" + targetCurrency
+		if cached, ok := service.GetCachedForex(fxPair); ok {
+			fxRate = cached
+		} else {
+			if finnhubKey != "" {
+				fc := service.NewFinnhubClient(finnhubKey)
+				if rate, err := fc.ForexRate("USD", targetCurrency); err == nil && rate > 0 {
+					fxRate = rate
+				}
+			}
+			if fxRate == 1 {
+				if rate, err := service.GetFreeForexRate("USD", targetCurrency); err == nil && rate > 0 {
+					fxRate = rate
+				}
+			}
+			if fxRate != 1 {
+				service.SetCachedForex(fxPair, fxRate)
+			}
+		}
+	}
+	fxRateD := decimal.NewFromFloat(fxRate)
+
+	// --- Collect all holdings per portfolio up front ---
+	type portfolioHoldings struct {
+		portfolio db.Portfolio
+		holdings  []db.ListHoldingsByPortfolioRow
+	}
+	allPortfolios := make([]portfolioHoldings, 0, len(portfolios))
+	uniqueSymbols := make(map[string]struct{})
+	for _, p := range portfolios {
+		holdings, _ := h.queries.ListHoldingsByPortfolio(c, p.ID)
+		allPortfolios = append(allPortfolios, portfolioHoldings{p, holdings})
+		for _, h2 := range holdings {
+			uniqueSymbols[h2.Symbol] = struct{}{}
+		}
+	}
+
+	// --- Fetch live prices in parallel (cache-first, 60-second TTL) ---
+	prices := make(map[string]float64, len(uniqueSymbols))
+	if finnhubKey != "" {
+		fc := service.NewFinnhubClient(finnhubKey)
+		var (
+			mu      sync.Mutex
+			wg      sync.WaitGroup
+		)
+		for sym := range uniqueSymbols {
+			if cached, ok := service.GetCachedPrice(sym); ok {
+				prices[sym] = cached
+				continue
+			}
+			wg.Add(1)
+			go func(s string) {
+				defer wg.Done()
+				if q, err := fc.Quote(s); err == nil && q.C > 0 {
+					service.SetCachedPrice(s, q.C)
+					mu.Lock()
+					prices[s] = q.C
+					mu.Unlock()
+				}
+			}(sym)
+		}
+		wg.Wait()
+	}
+
+	// --- Aggregate per portfolio ---
 	totalEquity := decimal.Zero
 	totalInvested := decimal.Zero
 	totalCash := decimal.Zero
@@ -69,47 +138,24 @@ func (h *Handler) GetNetWorth(c *gin.Context) {
 	totalDividends := decimal.Zero
 	totalFees := decimal.Zero
 
-	// Resolve FX rate — try Finnhub first, fall back to open.er-api.com
-	var fxRate float64 = 1
-	if targetCurrency != "USD" {
-		if finnhubKey != "" {
-			fc := service.NewFinnhubClient(finnhubKey)
-			if rate, err := fc.ForexRate("USD", targetCurrency); err == nil && rate > 0 {
-				fxRate = rate
-			}
-		}
-		if fxRate == 1 {
-			if rate, err := service.GetFreeForexRate("USD", targetCurrency); err == nil && rate > 0 {
-				fxRate = rate
-			}
-		}
-	}
-	fxRateD := decimal.NewFromFloat(fxRate)
+	breakdowns := make([]portfolioBreakdown, 0, len(allPortfolios))
 
-	breakdowns := make([]portfolioBreakdown, 0, len(portfolios))
-
-	for _, p := range portfolios {
+	for _, ph := range allPortfolios {
+		p := ph.portfolio
 		pEquity := decimal.Zero
 		pInvested := decimal.Zero
 		pUnrealized := decimal.Zero
 
-		holdings, _ := h.queries.ListHoldingsByPortfolio(c, p.ID)
-		for _, h2 := range holdings {
+		for _, h2 := range ph.holdings {
 			shares := decimalFromString(h2.Share)
 			avg := decimalFromString(h2.Avg)
 			inv := shares.Mul(avg)
 			pInvested = pInvested.Add(inv)
 
-			if finnhubKey != "" {
-				fc := service.NewFinnhubClient(finnhubKey)
-				if q, err := fc.Quote(h2.Symbol); err == nil && q.C > 0 {
-					livePrice := decimal.NewFromFloat(q.C)
-					eq := shares.Mul(livePrice)
-					pEquity = pEquity.Add(eq)
-					pUnrealized = pUnrealized.Add(eq.Sub(inv))
-				} else {
-					pEquity = pEquity.Add(inv)
-				}
+			if livePrice, ok := prices[h2.Symbol]; ok {
+				eq := shares.Mul(decimal.NewFromFloat(livePrice))
+				pEquity = pEquity.Add(eq)
+				pUnrealized = pUnrealized.Add(eq.Sub(inv))
 			} else {
 				pEquity = pEquity.Add(inv)
 			}
@@ -123,7 +169,6 @@ func (h *Handler) GetNetWorth(c *gin.Context) {
 			pRealized = decimalFromString(r)
 		}
 
-		// Apply FX conversion to per-portfolio values
 		if fxRate != 1 {
 			pEquity = pEquity.Mul(fxRateD)
 			pInvested = pInvested.Mul(fxRateD)
@@ -164,6 +209,31 @@ func (h *Handler) GetNetWorth(c *gin.Context) {
 				fee = fee.Mul(fxRateD)
 			}
 			totalFees = totalFees.Add(fee)
+		}
+	}
+
+	// --- Wallet balances (IDR → USD → targetCurrency, forex cached) ---
+	wallets, _ := h.queries.ListWalletsByUser(c, userID)
+	if len(wallets) > 0 {
+		var idrToUsd float64
+		if cached, ok := service.GetCachedForex("IDR_USD"); ok {
+			idrToUsd = cached
+		} else if rate, err := service.GetFreeForexRate("IDR", "USD"); err == nil && rate > 0 {
+			idrToUsd = rate
+			service.SetCachedForex("IDR_USD", rate)
+		}
+		if idrToUsd > 0 {
+			idrToUsdD := decimal.NewFromFloat(idrToUsd)
+			for _, w := range wallets {
+				bal, err := h.queries.GetWalletBalance(c, w.ID)
+				if err != nil {
+					continue
+				}
+				walletBal := decimalFromString(bal)
+				walletUSD := walletBal.Mul(idrToUsdD)
+				walletConverted := walletUSD.Mul(fxRateD)
+				totalCash = totalCash.Add(walletConverted)
+			}
 		}
 	}
 

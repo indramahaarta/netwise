@@ -7,11 +7,12 @@ import { useProfile, useLogout } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { BarChart2, Briefcase, Settings, LogOut } from 'lucide-react'
+import { BarChart2, Briefcase, Wallet, Settings, LogOut } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: BarChart2 },
   { href: '/portfolio', label: 'Portfolios', icon: Briefcase },
+  { href: '/wallets', label: 'Wallets', icon: Wallet },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
