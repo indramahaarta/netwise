@@ -4,6 +4,7 @@ import { use, useState } from 'react'
 import Link from 'next/link'
 import { usePortfolio, usePortfolioRealized } from '@/hooks/use-portfolios'
 import { useHoldings } from '@/hooks/use-holdings'
+import { useAmount } from '@/context/ui-settings'
 import { BuySellDialog } from '@/components/dialogs/buy-sell-dialog'
 import { CashFlowDialog } from '@/components/dialogs/cash-flow-dialog'
 import { DividendDialog } from '@/components/dialogs/dividend-dialog'
@@ -31,6 +32,7 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
   const { data: realizedData } = usePortfolioRealized(id)
   const [dialog, setDialog] = useState<DialogType>(null)
   const [selectedSymbol, setSelectedSymbol] = useState<string>()
+  const fmtAmt = useAmount()
 
   if (pLoading) {
     return (
@@ -54,11 +56,7 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
         <div>
           <h1 className="text-xl font-semibold">{portfolio.name}</h1>
           <p className="text-sm text-muted-foreground">
-            Cash:{' '}
-            {parseFloat(portfolio.cash).toLocaleString('en-US', {
-              style: 'currency',
-              currency: portfolio.currency,
-            })}
+            Cash: {fmtAmt(portfolio.cash, portfolio.currency)}
           </p>
         </div>
         <Badge variant="outline" className="ml-2">
@@ -103,9 +101,6 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
         const pnlColor = (val: number) =>
           val > 0 ? 'text-green-600' : val < 0 ? 'text-destructive' : 'text-muted-foreground'
 
-        const fmtAmt = (val: number) =>
-          val.toLocaleString('en-US', { style: 'currency', currency: portfolio.currency, minimumFractionDigits: 2 })
-
         return (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {[
@@ -124,7 +119,7 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
                     <CardTitle className="text-xs font-medium text-muted-foreground">{label}</CardTitle>
                   </CardHeader>
                   <CardContent className="px-4 pb-3">
-                    <p className={`text-sm font-semibold ${color}`}>{fmtAmt(val)}</p>
+                    <p className={`text-sm font-semibold ${color}`}>{fmtAmt(val, portfolio.currency)}</p>
                     {pct != null && (
                       <p className={`text-xs mt-0.5 ${color}`}>{val >= 0 ? '+' : ''}{pct}%</p>
                     )}
@@ -175,15 +170,15 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
                       </div>
                       <div className="flex gap-4 text-xs text-muted-foreground">
                         <span>{parseFloat(h.shares).toFixed(4)} sh</span>
-                        <span>avg {parseFloat(h.avg_cost).toFixed(2)}</span>
-                        {h.live_price > 0 && <span>live {h.live_price.toFixed(2)}</span>}
+                        <span>avg {fmtAmt(h.avg_cost, portfolio.currency)}</span>
+                        {h.live_price > 0 && <span>live {fmtAmt(h.live_price, portfolio.currency)}</span>}
                       </div>
                       <div className="flex justify-between text-xs">
-                        <span>Equity <span className="font-medium text-foreground">{parseFloat(h.equity).toFixed(2)}</span></span>
-                        <span>Invested <span className="font-medium text-foreground">{parseFloat(h.invested).toFixed(2)}</span></span>
+                        <span>Equity <span className="font-medium text-foreground">{fmtAmt(h.equity, portfolio.currency)}</span></span>
+                        <span>Invested <span className="font-medium text-foreground">{fmtAmt(h.invested, portfolio.currency)}</span></span>
                       </div>
                       <div className={`text-xs font-medium ${pnlColor}`}>
-                        P&L {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} ({h.pnl_pct}%)
+                        P&L {pnl >= 0 ? '+' : ''}{fmtAmt(h.unrealized_pnl, portfolio.currency)} ({h.pnl_pct}%)
                       </div>
                     </div>
                   )
@@ -220,14 +215,14 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
                         </div>
                       </TableCell>
                       <TableCell className="text-right">{parseFloat(h.shares).toFixed(4)}</TableCell>
-                      <TableCell className="text-right">{parseFloat(h.avg_cost).toFixed(4)}</TableCell>
-                      <TableCell className="text-right">{h.live_price > 0 ? h.live_price.toFixed(4) : '—'}</TableCell>
-                      <TableCell className="text-right">{parseFloat(h.equity).toFixed(2)}</TableCell>
-                      <TableCell className="text-right">{parseFloat(h.invested).toFixed(2)}</TableCell>
+                      <TableCell className="text-right">{fmtAmt(h.avg_cost, portfolio.currency)}</TableCell>
+                      <TableCell className="text-right">{h.live_price > 0 ? fmtAmt(h.live_price, portfolio.currency) : '—'}</TableCell>
+                      <TableCell className="text-right">{fmtAmt(h.equity, portfolio.currency)}</TableCell>
+                      <TableCell className="text-right">{fmtAmt(h.invested, portfolio.currency)}</TableCell>
                       <TableCell className={`text-right ${pnlColor}`}>
                         <span className="flex items-center justify-end gap-1">
                           {pnl > 0 ? <TrendingUp className="h-3 w-3" /> : pnl < 0 ? <TrendingDown className="h-3 w-3" /> : null}
-                          {pnl.toFixed(2)}
+                          {fmtAmt(h.unrealized_pnl, portfolio.currency)}
                         </span>
                       </TableCell>
                       <TableCell className={`text-right ${pnlColor}`}>
@@ -259,6 +254,7 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
       {(dialog === 'buy' || dialog === 'sell') && (
         <BuySellDialog
           portfolioId={id}
+          portfolioCurrency={portfolio.currency}
           side={dialog.toUpperCase() as 'BUY' | 'SELL'}
           open
           onClose={() => { setDialog(null); setSelectedSymbol(undefined) }}

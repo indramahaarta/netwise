@@ -43,23 +43,32 @@ func (h *Handler) BuyStock(c *gin.Context) {
 		return
 	}
 
-	finnhubKey, err := util.DecryptAES(user.FinnhubApiKey.String, h.cfg.AESKey)
-	if err != nil || finnhubKey == "" {
-		respondError(c, http.StatusBadRequest, "Finnhub API key not configured")
-		return
-	}
-
-	// Upsert ticker (fetch company profile for metadata)
-	fc := service.NewFinnhubClient(finnhubKey)
-	profile, _ := fc.GetCompanyProfile(req.Symbol)
-
+	// Resolve ticker metadata — route to Yahoo Finance for IDX symbols,
+	// Finnhub for everything else.
 	tickerName, tickerCurrency, tickerSector := req.Symbol, "USD", ""
-	if profile != nil && profile.Name != "" {
-		tickerName = profile.Name
-		if profile.Currency != "" {
-			tickerCurrency = profile.Currency
+
+	if service.IsIDRNativeSymbol(req.Symbol) {
+		name, currency, _ := service.GetIDRProfile(req.Symbol)
+		tickerName = name
+		tickerCurrency = currency
+	} else {
+		if !user.FinnhubApiKey.Valid {
+			respondError(c, http.StatusBadRequest, "Finnhub API key not configured")
+			return
 		}
-		tickerSector = profile.Industry
+		finnhubKey, err := util.DecryptAES(user.FinnhubApiKey.String, h.cfg.AESKey)
+		if err != nil || finnhubKey == "" {
+			respondError(c, http.StatusInternalServerError, "failed to decrypt API key")
+			return
+		}
+		fc := service.NewFinnhubClient(finnhubKey)
+		if profile, err := fc.GetCompanyProfile(req.Symbol); err == nil && profile != nil && profile.Name != "" {
+			tickerName = profile.Name
+			if profile.Currency != "" {
+				tickerCurrency = profile.Currency
+			}
+			tickerSector = profile.Industry
+		}
 	}
 
 	ticker, err := h.queries.GetOrCreateTicker(c, db.GetOrCreateTickerParams{

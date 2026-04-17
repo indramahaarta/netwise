@@ -13,32 +13,32 @@ export function useNetWorth(currency: 'USD' | 'IDR' = 'USD') {
   })
 }
 
-export function useNetWorthSnapshots(range: string) {
+export function useNetWorthSnapshots(range: string, currency: 'USD' | 'IDR' = 'USD') {
   return useQuery<NetWorthSnapshot[]>({
-    queryKey: ['networth-snapshots', range],
+    queryKey: ['networth-snapshots', range, currency],
     queryFn: () =>
       api
-        .get('/api/v1/networth/snapshots', { params: { range } })
+        .get('/api/v1/networth/snapshots', { params: { range, currency } })
         .then((r) => r.data),
   })
 }
 
-export function usePortfolioSnapshots(portfolioId: string | number | null, range: string) {
+export function usePortfolioSnapshots(portfolioId: string | number | null, range: string, currency: 'USD' | 'IDR' = 'USD') {
   return useQuery<PortfolioSnapshot[]>({
-    queryKey: ['portfolio-snapshots', portfolioId, range],
+    queryKey: ['portfolio-snapshots', portfolioId, range, currency],
     queryFn: () =>
       api
-        .get(`/api/v1/portfolios/${portfolioId}/snapshots`, { params: { range } })
+        .get(`/api/v1/portfolios/${portfolioId}/snapshots`, { params: { range, currency } })
         .then((r) => r.data),
     enabled: !!portfolioId,
   })
 }
 
-export function useStockSearch(query: string) {
+export function useStockSearch(query: string, market: 'US' | 'ID' = 'US') {
   return useQuery<{ count: number; result: StockSearchResult[] }>({
-    queryKey: ['stock-search', query],
+    queryKey: ['stock-search', query, market],
     queryFn: () =>
-      api.get('/api/v1/stocks/search', { params: { q: query } }).then((r) => r.data),
+      api.get('/api/v1/stocks/search', { params: { q: query, market } }).then((r) => r.data),
     enabled: query.length >= 2,
     staleTime: 10_000,
   })

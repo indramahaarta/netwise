@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useNetWorth } from '@/hooks/use-networth'
 import { usePortfolios } from '@/hooks/use-portfolios'
+import { useAmount } from '@/context/ui-settings'
 import { NetWorthChart } from '@/components/charts/net-worth-chart'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -13,22 +14,14 @@ import { TrendingUp, TrendingDown, Plus } from 'lucide-react'
 
 type Currency = 'USD' | 'IDR'
 
-function fmt(value: string, currency: Currency) {
-  const num = parseFloat(value)
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-  }).format(num)
-}
-
 function PnLBadge({ value }: { value: string }) {
+  const fmtAmt = useAmount()
   const num = parseFloat(value)
   const positive = num >= 0
   return (
     <Badge variant={positive ? 'default' : 'destructive'} className="gap-1">
       {positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-      {positive ? '+' : ''}{fmt(value, 'USD')}
+      {positive ? '+' : ''}{fmtAmt(value, 'USD')}
     </Badge>
   )
 }
@@ -37,6 +30,7 @@ export default function DashboardPage() {
   const [currency, setCurrency] = useState<Currency>('USD')
   const { data: nw, isLoading: nwLoading } = useNetWorth(currency)
   const { data: portfolios, isLoading: pLoading } = usePortfolios()
+  const fmtAmt = useAmount()
 
   return (
     <div className="p-6 space-y-6">
@@ -100,7 +94,7 @@ export default function DashboardPage() {
                   </CardHeader>
                   <CardContent className="px-4 pb-4">
                     <p className={`text-base font-semibold ${pnlColor}`}>
-                      {fmt(value, displayCurrency)}
+                      {fmtAmt(value, displayCurrency)}
                     </p>
                     {pct != null && (
                       <p className={`text-xs mt-0.5 ${pnlColor}`}>
@@ -168,38 +162,35 @@ export default function DashboardPage() {
                         <>
                           <div>
                             <p className="text-xs text-muted-foreground">Net Worth</p>
-                            <p className="text-lg font-semibold">{fmt(stats.net_worth, displayCcy)}</p>
+                            <p className="text-lg font-semibold">{fmtAmt(stats.net_worth, displayCcy)}</p>
                           </div>
                           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                             <div>
                               <span className="text-muted-foreground">Equity </span>
-                              <span className="font-medium">{fmt(stats.total_equity, displayCcy)}</span>
+                              <span className="font-medium">{fmtAmt(stats.total_equity, displayCcy)}</span>
                             </div>
                             <div>
                               <span className="text-muted-foreground">Invested </span>
-                              <span className="font-medium">{fmt(stats.total_invested, displayCcy)}</span>
+                              <span className="font-medium">{fmtAmt(stats.total_invested, displayCcy)}</span>
                             </div>
                             <div>
                               <span className="text-muted-foreground">Cash </span>
-                              <span className="font-medium">{fmt(stats.cash, displayCcy)}</span>
+                              <span className="font-medium">{fmtAmt(stats.cash, displayCcy)}</span>
                             </div>
                             <div>
                               <span className="text-muted-foreground">Realized </span>
                               <span className={`font-medium ${pnlColor(parseFloat(stats.realized_pnl))}`}>
-                                {fmt(stats.realized_pnl, displayCcy)}
+                                {fmtAmt(stats.realized_pnl, displayCcy)}
                               </span>
                             </div>
                           </div>
                           <div className={`text-xs font-medium ${pnlColor(parseFloat(stats.unrealized_pnl))}`}>
-                            Unrealized P&L {fmt(stats.unrealized_pnl, displayCcy)}
+                            Unrealized P&L {fmtAmt(stats.unrealized_pnl, displayCcy)}
                           </div>
                         </>
                       ) : (
                         <p className="text-lg font-semibold">
-                          {parseFloat(p.cash).toLocaleString('en-US', {
-                            style: 'currency',
-                            currency: p.currency,
-                          })}
+                          {fmtAmt(p.cash, p.currency as Currency)}
                           <span className="text-xs font-normal text-muted-foreground ml-1">cash</span>
                         </p>
                       )}

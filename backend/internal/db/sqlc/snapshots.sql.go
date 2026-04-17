@@ -13,11 +13,21 @@ import (
 const listNetWorthSnapshots = `-- name: ListNetWorthSnapshots :many
 WITH portfolio_daily AS (
     SELECT ps.snapshot_date,
-           SUM(ps.total_equity + ps.cash_balance) AS portfolio_nw,
-           SUM(ps.total_invested)                  AS total_invested,
-           SUM(ps.unrealized)                      AS unrealized,
-           SUM(ps.realized)                        AS realized,
-           SUM(ps.cash_balance)                    AS portfolio_cash
+           SUM(CASE WHEN ps.currency = 'IDR'
+                    THEN (ps.total_equity + ps.cash_balance) * $4::NUMERIC
+                    ELSE  (ps.total_equity + ps.cash_balance) * $5::NUMERIC END) AS portfolio_nw,
+           SUM(CASE WHEN ps.currency = 'IDR'
+                    THEN ps.total_invested * $4::NUMERIC
+                    ELSE ps.total_invested * $5::NUMERIC END)                     AS total_invested,
+           SUM(CASE WHEN ps.currency = 'IDR'
+                    THEN ps.unrealized * $4::NUMERIC
+                    ELSE ps.unrealized * $5::NUMERIC END)                         AS unrealized,
+           SUM(CASE WHEN ps.currency = 'IDR'
+                    THEN ps.realized * $4::NUMERIC
+                    ELSE ps.realized * $5::NUMERIC END)                           AS realized,
+           SUM(CASE WHEN ps.currency = 'IDR'
+                    THEN ps.cash_balance * $4::NUMERIC
+                    ELSE ps.cash_balance * $5::NUMERIC END)                       AS portfolio_cash
     FROM portfolio_snapshot ps
     JOIN portfolio p ON p.id = ps.portfolio_id
     WHERE p.user_id = $1
@@ -27,7 +37,7 @@ WITH portfolio_daily AS (
 ),
 wallet_daily AS (
     SELECT ws.snapshot_date,
-           SUM(ws.balance_usd) AS wallet_usd
+           SUM(ws.balance_usd * $5::NUMERIC) AS wallet_usd
     FROM wallet_snapshot ws
     JOIN wallet w ON w.id = ws.wallet_id
     WHERE w.user_id = $1
@@ -43,10 +53,10 @@ all_dates AS (
 SELECT
     d.snapshot_date,
     (COALESCE(pd.portfolio_nw, 0)   + COALESCE(wd.wallet_usd, 0))::NUMERIC AS net_worth,
-    COALESCE(pd.total_invested, 0)::NUMERIC                                 AS total_invested,
-    COALESCE(pd.unrealized, 0)::NUMERIC                                     AS unrealized,
-    COALESCE(pd.realized, 0)::NUMERIC                                       AS realized,
-    (COALESCE(pd.portfolio_cash, 0) + COALESCE(wd.wallet_usd, 0))::NUMERIC AS cash_balance
+    COALESCE(pd.total_invested, 0)::NUMERIC                                  AS total_invested,
+    COALESCE(pd.unrealized, 0)::NUMERIC                                      AS unrealized,
+    COALESCE(pd.realized, 0)::NUMERIC                                        AS realized,
+    (COALESCE(pd.portfolio_cash, 0) + COALESCE(wd.wallet_usd, 0))::NUMERIC  AS cash_balance
 FROM all_dates d
 LEFT JOIN portfolio_daily pd ON pd.snapshot_date = d.snapshot_date
 LEFT JOIN wallet_daily    wd ON wd.snapshot_date = d.snapshot_date
@@ -57,6 +67,8 @@ type ListNetWorthSnapshotsParams struct {
 	UserID         int64     `json:"user_id"`
 	SnapshotDate   time.Time `json:"snapshot_date"`
 	SnapshotDate_2 time.Time `json:"snapshot_date_2"`
+	Column4        string    `json:"column_4"`
+	Column5        string    `json:"column_5"`
 }
 
 type ListNetWorthSnapshotsRow struct {
@@ -69,7 +81,13 @@ type ListNetWorthSnapshotsRow struct {
 }
 
 func (q *Queries) ListNetWorthSnapshots(ctx context.Context, arg ListNetWorthSnapshotsParams) ([]ListNetWorthSnapshotsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listNetWorthSnapshots, arg.UserID, arg.SnapshotDate, arg.SnapshotDate_2)
+	rows, err := q.db.QueryContext(ctx, listNetWorthSnapshots,
+		arg.UserID,
+		arg.SnapshotDate,
+		arg.SnapshotDate_2,
+		arg.Column4,
+		arg.Column5,
+	)
 	if err != nil {
 		return nil, err
 	}

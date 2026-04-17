@@ -15,13 +15,14 @@ import {
 
 interface Props {
   portfolioId: number | string
+  portfolioCurrency: string
   side: 'BUY' | 'SELL'
   open: boolean
   onClose: () => void
   defaultSymbol?: string
 }
 
-export function BuySellDialog({ portfolioId, side, open, onClose, defaultSymbol }: Props) {
+export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onClose, defaultSymbol }: Props) {
   const [symbol, setSymbol] = useState(defaultSymbol || '')
   const [quantity, setQuantity] = useState('')
   const [price, setPrice] = useState('')
@@ -33,7 +34,8 @@ export function BuySellDialog({ portfolioId, side, open, onClose, defaultSymbol 
   const sell = useSellStock(portfolioId)
   const mutation = side === 'BUY' ? buy : sell
 
-  const { data: searchResults } = useStockSearch(searchQuery)
+  const market = portfolioCurrency === 'IDR' ? 'ID' : 'US'
+  const { data: searchResults } = useStockSearch(searchQuery, market)
 
   const totalCost =
     parseFloat(quantity || '0') * parseFloat(price || '0') +

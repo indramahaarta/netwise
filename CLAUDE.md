@@ -46,7 +46,7 @@ go mod tidy
 - **`internal/db/query/`** — hand-written SQL queries consumed by sqlc. **Edit these, then run `sqlc generate`** — never edit `internal/db/sqlc/` directly.
 - **`internal/db/sqlc/`** — generated code only. All NUMERIC columns come back as `string`; use `github.com/shopspring/decimal` for arithmetic.
 - **`internal/handler/`** — thin Gin handlers, one file per domain. All handlers share the `Handler` struct defined in `handler.go`. Routes are registered in `handler.go` via `RegisterRoutes` (public) and `RegisterProtectedRoutes` (JWT-gated).
-- **`internal/service/`** — business logic: `finnhub.go` (Finnhub HTTP client), `snapshot.go` (daily portfolio snapshot cron).
+- **`internal/service/`** — business logic: `finnhub.go` (Finnhub HTTP client), `snapshot.go` (daily portfolio snapshot cron), `forex.go` (free forex rates via `open.er-api.com`, no API key required — used as fallback when Finnhub returns 0 on free plan), `cache.go` (in-process price cache 60s TTL, forex cache 1h TTL).
 - **`internal/middleware/auth.go`** — validates JWT from `cookie["token"]`, sets `user_id` in context. Use `middleware.GetUserID(c)` in handlers.
 - **`internal/util/`** — `token.go` (JWT create/parse), `crypto.go` (bcrypt, AES-256-GCM for Finnhub API key storage).
 
@@ -56,6 +56,9 @@ go mod tidy
 - `AES_KEY` must be exactly 32 characters.
 - JWT lives in an HttpOnly cookie named `token` (30-day expiry).
 - The `portfolioOwnerMiddleware()` in `handler.go` verifies portfolio ownership before every `/:id` sub-route and sets `portfolio_id` in context; retrieve it with `getPortfolioID(c)`.
+- `walletOwnerMiddleware()` does the same for wallets, setting `wallet_id` in context; retrieve with `getWalletID(c)`.
+- Wallet balance has **no stored column** — it is computed on demand via `GetWalletBalance` (sums wallet_transactions). Never try to read a balance field from the `wallets` table directly.
+- Wallet transaction types: `INCOME`, `EXPENSE`, `TRANSFER_IN`, `TRANSFER_OUT`, `PORTFOLIO_DEPOSIT`, `PORTFOLIO_WITHDRAWAL`.
 - Broker rate for deposit: `target = source_IDR / broker_rate`. For withdrawal: `IDR = target * broker_rate`.
 - Buy avg cost formula: `new_avg = (old_shares * old_avg + qty * price) / (old_shares + qty)`.
 - Realized gain on sell: `(sell_price - avg) * qty - fee`.
@@ -95,10 +98,11 @@ pnpm add <package>
 - **`app/(dashboard)/`** — all authenticated pages behind `layout.tsx`, which calls `useProfile()` and redirects to `/login` on 401.
 - **`lib/api.ts`** — Axios instance with `withCredentials: true` and a 401 interceptor that redirects to `/login`.
 - **`lib/types.ts`** — shared TypeScript interfaces matching backend JSON responses.
-- **`hooks/`** — TanStack Query v5 hooks, one file per domain (`use-auth`, `use-portfolios`, `use-holdings`, `use-networth`). All mutations invalidate the relevant query keys.
+- **`hooks/`** — TanStack Query v5 hooks, one file per domain (`use-auth`, `use-portfolios`, `use-holdings`, `use-networth`, `use-wallets`). All mutations invalidate the relevant query keys.
 - **`components/dialogs/`** — Buy/Sell, Deposit/Withdraw, and Dividend dialogs (client components).
 - **`components/charts/net-worth-chart.tsx`** — Recharts `AreaChart` driven by `useNetWorthSnapshots(range)`.
 - **`components/providers.tsx`** — wraps the app in `QueryClientProvider`.
+- **`app/(dashboard)/wallets/`** — wallet list, create, and detail pages. Wallet detail page (`[id]/page.tsx`) shows balance, transactions, and allows income/expense/transfer operations.
 
 ---
 

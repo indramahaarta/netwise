@@ -21,8 +21,8 @@ const RANGES = ['1W', '1M', '3M', 'YTD', '1Y', '5Y', 'ALL'] as const
 const LINES = [
   { key: 'netWorth', label: 'Net Worth', color: '#3b82f6' },
   { key: 'equity', label: 'Equity', color: '#22c55e' },
-  { key: 'invested', label: 'Invested', color: '#f59e0b' },
   { key: 'cash', label: 'Cash', color: '#06b6d4' },
+  { key: 'invested', label: 'Invested', color: '#f59e0b' },
   { key: 'unrealized', label: 'Unrealized P&L', color: '#8b5cf6' },
   { key: 'realized', label: 'Realized P&L', color: '#ec4899' },
 ] as const
@@ -77,17 +77,17 @@ function isTodayInSnapshots(snapshots: { snapshot_date: string }[]): boolean {
 }
 
 // Component that fetches per-portfolio snapshots for a given list of ids
-function useMultiPortfolioSnapshots(ids: number[], range: string) {
-  const a = usePortfolioSnapshots(ids[0] ?? null, range)
-  const b = usePortfolioSnapshots(ids[1] ?? null, range)
-  const c = usePortfolioSnapshots(ids[2] ?? null, range)
-  const d = usePortfolioSnapshots(ids[3] ?? null, range)
-  const e = usePortfolioSnapshots(ids[4] ?? null, range)
-  const f = usePortfolioSnapshots(ids[5] ?? null, range)
-  const g = usePortfolioSnapshots(ids[6] ?? null, range)
-  const h = usePortfolioSnapshots(ids[7] ?? null, range)
-  const i = usePortfolioSnapshots(ids[8] ?? null, range)
-  const j = usePortfolioSnapshots(ids[9] ?? null, range)
+function useMultiPortfolioSnapshots(ids: number[], range: string, currency: 'USD' | 'IDR') {
+  const a = usePortfolioSnapshots(ids[0] ?? null, range, currency)
+  const b = usePortfolioSnapshots(ids[1] ?? null, range, currency)
+  const c = usePortfolioSnapshots(ids[2] ?? null, range, currency)
+  const d = usePortfolioSnapshots(ids[3] ?? null, range, currency)
+  const e = usePortfolioSnapshots(ids[4] ?? null, range, currency)
+  const f = usePortfolioSnapshots(ids[5] ?? null, range, currency)
+  const g = usePortfolioSnapshots(ids[6] ?? null, range, currency)
+  const h = usePortfolioSnapshots(ids[7] ?? null, range, currency)
+  const i = usePortfolioSnapshots(ids[8] ?? null, range, currency)
+  const j = usePortfolioSnapshots(ids[9] ?? null, range, currency)
 
   const all = [a, b, c, d, e, f, g, h, i, j].slice(0, ids.length)
   const isLoading = all.some((q) => q.isLoading)
@@ -129,22 +129,26 @@ function mergePortfolioSnapshots(
 export function NetWorthChart({ currency, liveData, portfolios = [] }: Props) {
   const [range, setRange] = useState<string>('1M')
   const [activeLines, setActiveLines] = useState<Set<LineKey>>(
-    new Set(LINES.map((l) => l.key))
+    new Set(['netWorth', 'equity', 'cash'] as const)
   )
   const [selectedPortfolioIds, setSelectedPortfolioIds] = useState<number[] | 'all'>('all')
+  const [lastClickedLine, setLastClickedLine] = useState<LineKey | null>(null)
+  const [lastClickedPortfolio, setLastClickedPortfolio] = useState<number | null>(null)
 
   const isAll = selectedPortfolioIds === 'all'
 
   // Aggregate data (when "all" selected)
   const { data: aggSnapshots, isLoading: aggLoading } = useNetWorthSnapshots(
-    isAll ? range : '__disabled__'
+    isAll ? range : '__disabled__',
+    currency
   )
 
   // Per-portfolio data (when specific portfolios selected)
   const selectedIds = isAll ? [] : selectedPortfolioIds
   const { isLoading: perLoading, results: perResults } = useMultiPortfolioSnapshots(
     selectedIds,
-    range
+    range,
+    currency
   )
 
   const isLoading = isAll ? aggLoading : perLoading
@@ -216,6 +220,14 @@ export function NetWorthChart({ currency, liveData, portfolios = [] }: Props) {
   }, [isAll, aggSnapshots, perResults, liveData, selectedPortfolioIds])
 
   function toggleLine(key: LineKey) {
+    // If this is the 2nd click on the same line, isolate to just this line
+    if (lastClickedLine === key) {
+      setActiveLines(new Set([key]))
+      setLastClickedLine(null)
+      return
+    }
+
+    // 1st click: toggle current behavior
     setActiveLines((prev) => {
       const next = new Set(prev)
       if (next.has(key)) {
@@ -226,9 +238,18 @@ export function NetWorthChart({ currency, liveData, portfolios = [] }: Props) {
       }
       return next
     })
+    setLastClickedLine(key)
   }
 
   function togglePortfolio(id: number) {
+    // If this is the 2nd click on the same portfolio, isolate to just this portfolio
+    if (lastClickedPortfolio === id) {
+      setSelectedPortfolioIds([id])
+      setLastClickedPortfolio(null)
+      return
+    }
+
+    // 1st click: toggle current behavior
     if (selectedPortfolioIds === 'all') {
       setSelectedPortfolioIds([id])
     } else {
@@ -237,6 +258,7 @@ export function NetWorthChart({ currency, liveData, portfolios = [] }: Props) {
         : [...selectedPortfolioIds, id]
       setSelectedPortfolioIds(next.length === 0 ? 'all' : next)
     }
+    setLastClickedPortfolio(id)
   }
 
   return (
@@ -283,7 +305,10 @@ export function NetWorthChart({ currency, liveData, portfolios = [] }: Props) {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => setSelectedPortfolioIds('all')}
+            onClick={() => {
+              setSelectedPortfolioIds('all')
+              setLastClickedPortfolio(null)
+            }}
             className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-opacity ${
               isAll ? 'bg-accent' : 'opacity-40'
             }`}

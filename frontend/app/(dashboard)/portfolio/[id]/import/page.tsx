@@ -41,7 +41,8 @@ export default function ImportPage({ params }: { params: Promise<{ id: string }>
   // Stock search state per row — use a single search query for the focused row
   const [focusedRowId, setFocusedRowId] = useState<number | null>(null)
   const focusedRow = rows.find((r) => r.id === focusedRowId)
-  const { data: searchResults } = useStockSearch(focusedRow?.searchQuery || '')
+  const market = portfolio?.currency === 'IDR' ? 'ID' : 'US'
+  const { data: searchResults } = useStockSearch(focusedRow?.searchQuery || '', market)
 
   function updateRow(rowId: number, patch: Partial<HoldingRow>) {
     setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, ...patch } : r)))

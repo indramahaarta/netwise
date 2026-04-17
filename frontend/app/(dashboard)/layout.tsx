@@ -4,10 +4,11 @@ import { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useProfile, useLogout } from '@/hooks/use-auth'
+import { useUISettings } from '@/context/ui-settings'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { BarChart2, Briefcase, Wallet, Settings, LogOut } from 'lucide-react'
+import { BarChart2, Briefcase, Wallet, Settings, LogOut, Moon, Sun, Eye, EyeOff } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: BarChart2 },
@@ -21,6 +22,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter()
   const { data: user, isLoading, isError } = useProfile()
   const logout = useLogout()
+  const { darkMode, toggleDarkMode, unseen, toggleUnseen } = useUISettings()
 
   useEffect(() => {
     if (isError) {
@@ -71,7 +73,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </nav>
         <Separator />
-        <div className="p-4">
+        <div className="p-4 space-y-1">
+          {/* Preference toggles */}
+          <div className="flex gap-1 mb-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground"
+              onClick={toggleDarkMode}
+              title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+            <Button
+              variant={unseen ? 'secondary' : 'ghost'}
+              size="icon"
+              className="text-muted-foreground"
+              onClick={toggleUnseen}
+              title={unseen ? 'Show amounts' : 'Hide amounts'}
+            >
+              {unseen ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+            </Button>
+          </div>
           <Button
             variant="ghost"
             size="sm"
@@ -90,6 +113,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {user && (
           <span className="text-xs text-muted-foreground truncate">{user.email}</span>
         )}
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground"
+            onClick={toggleDarkMode}
+          >
+            {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+          <Button
+            variant={unseen ? 'secondary' : 'ghost'}
+            size="icon"
+            className="h-8 w-8 text-muted-foreground"
+            onClick={toggleUnseen}
+          >
+            {unseen ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+          </Button>
+        </div>
       </header>
 
       {/* Main content */}

@@ -10,11 +10,24 @@ import (
 
 	db "github.com/indramahaarta/netwise/internal/db/sqlc"
 	"github.com/indramahaarta/netwise/internal/middleware"
+	"github.com/indramahaarta/netwise/internal/service"
 )
 
 type createPortfolioRequest struct {
 	Name     string `json:"name" binding:"required,min=1,max=100"`
 	Currency string `json:"currency" binding:"required,len=3"`
+}
+
+type portfolioSnapshotResponse struct {
+	ID            int64  `json:"id"`
+	PortfolioID   int64  `json:"portfolio_id"`
+	SnapshotDate  string `json:"snapshot_date"`
+	TotalEquity   string `json:"total_equity"`
+	TotalInvested string `json:"total_invested"`
+	CashBalance   string `json:"cash_balance"`
+	Unrealized    string `json:"unrealized"`
+	Realized      string `json:"realized"`
+	Currency      string `json:"currency"`
 }
 
 type updatePortfolioRequest struct {
@@ -132,6 +145,7 @@ type setCashRequest struct {
 func (h *Handler) GetPortfolioSnapshots(c *gin.Context) {
 	portfolioID := getPortfolioID(c)
 	rangeParam := c.DefaultQuery("range", "1M")
+	targetCurrency := c.DefaultQuery("currency", "USD")
 
 	now := time.Now()
 	var from time.Time
@@ -162,7 +176,60 @@ func (h *Handler) GetPortfolioSnapshots(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, rows)
+	// Compute conversion rate for this portfolio's currency → targetCurrency
+	portfolio, err := h.queries.GetPortfolioForUser(c, db.GetPortfolioForUserParams{
+		ID:     portfolioID,
+		UserID: middleware.GetUserID(c),
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to load portfolio")
+		return
+	}
+
+	rate := decimal.NewFromInt(1)
+	if portfolio.Currency != targetCurrency {
+		if portfolio.Currency == "IDR" && targetCurrency == "USD" {
+			// IDR → USD
+			if cached, ok := service.GetCachedForex("IDR_USD"); ok {
+				rate = decimal.NewFromFloat(cached)
+			} else if r, err := service.GetFreeForexRate("IDR", "USD"); err == nil && r > 0 {
+				rate = decimal.NewFromFloat(r)
+				service.SetCachedForex("IDR_USD", r)
+			}
+		} else if portfolio.Currency == "USD" && targetCurrency == "IDR" {
+			// USD → IDR
+			if cached, ok := service.GetCachedForex("USD_IDR"); ok {
+				rate = decimal.NewFromFloat(cached)
+			} else if r, err := service.GetFreeForexRate("USD", "IDR"); err == nil && r > 0 {
+				rate = decimal.NewFromFloat(r)
+				service.SetCachedForex("USD_IDR", r)
+			}
+		}
+	}
+
+	// Convert each snapshot row
+	responses := make([]portfolioSnapshotResponse, 0, len(rows))
+	for _, row := range rows {
+		eq := decimalFromString(row.TotalEquity).Mul(rate)
+		inv := decimalFromString(row.TotalInvested).Mul(rate)
+		cash := decimalFromString(row.CashBalance).Mul(rate)
+		unr := decimalFromString(row.Unrealized).Mul(rate)
+		real := decimalFromString(row.Realized).Mul(rate)
+
+		responses = append(responses, portfolioSnapshotResponse{
+			ID:            row.ID,
+			PortfolioID:   row.PortfolioID,
+			SnapshotDate:  row.SnapshotDate.Format("2006-01-02"),
+			TotalEquity:   eq.StringFixed(2),
+			TotalInvested: inv.StringFixed(2),
+			CashBalance:   cash.StringFixed(2),
+			Unrealized:    unr.StringFixed(2),
+			Realized:      real.StringFixed(2),
+			Currency:      targetCurrency,
+		})
+	}
+
+	c.JSON(http.StatusOK, responses)
 }
 
 func (h *Handler) SetCash(c *gin.Context) {
