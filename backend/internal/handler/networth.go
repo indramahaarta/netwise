@@ -11,7 +11,6 @@ import (
 	db "github.com/indramahaarta/netwise/internal/db/sqlc"
 	"github.com/indramahaarta/netwise/internal/middleware"
 	"github.com/indramahaarta/netwise/internal/service"
-	"github.com/indramahaarta/netwise/internal/util"
 )
 
 type portfolioBreakdown struct {
@@ -45,21 +44,10 @@ func (h *Handler) GetNetWorth(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	targetCurrency := c.DefaultQuery("currency", "USD")
 
-	user, err := h.queries.GetUserByID(c, userID)
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, "user not found")
-		return
-	}
-
 	portfolios, err := h.queries.ListPortfoliosByUser(c, userID)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to list portfolios")
 		return
-	}
-
-	var finnhubKey string
-	if user.FinnhubApiKey.Valid {
-		finnhubKey, _ = util.DecryptAES(user.FinnhubApiKey.String, h.cfg.AESKey)
 	}
 
 	// --- USD → targetCurrency rate (cache-first, 1-hour TTL) ---
@@ -69,16 +57,8 @@ func (h *Handler) GetNetWorth(c *gin.Context) {
 		if cached, ok := service.GetCachedForex(fxPair); ok {
 			fxRate = cached
 		} else {
-			if finnhubKey != "" {
-				fc := service.NewFinnhubClient(finnhubKey)
-				if rate, err := fc.ForexRate("USD", targetCurrency); err == nil && rate > 0 {
-					fxRate = rate
-				}
-			}
-			if fxRate == 1 {
-				if rate, err := service.GetFreeForexRate("USD", targetCurrency); err == nil && rate > 0 {
-					fxRate = rate
-				}
+			if rate, err := service.GetFreeForexRate("USD", targetCurrency); err == nil && rate > 0 {
+				fxRate = rate
 			}
 			if fxRate != 1 {
 				service.SetCachedForex(fxPair, fxRate)
@@ -123,16 +103,12 @@ func (h *Handler) GetNetWorth(c *gin.Context) {
 	}
 
 	// --- Fetch live prices in parallel (cache-first, 60-second TTL) ---
-	// IDX symbols (.JK) use Yahoo Finance; everything else uses Finnhub.
+	// All symbols use Yahoo Finance — IDR-native via GetIDRPrice, others via GetUSPrice.
 	prices := make(map[string]float64, len(uniqueSymbols))
 	var (
 		mu sync.Mutex
 		wg sync.WaitGroup
 	)
-	var fc *service.FinnhubClient
-	if finnhubKey != "" {
-		fc = service.NewFinnhubClient(finnhubKey)
-	}
 	for sym := range uniqueSymbols {
 		if cached, ok := service.GetCachedPrice(sym); ok {
 			prices[sym] = cached
@@ -146,9 +122,9 @@ func (h *Handler) GetNetWorth(c *gin.Context) {
 				if v, err := service.GetIDRPrice(s); err == nil && v > 0 {
 					p = v
 				}
-			} else if fc != nil {
-				if q, err := fc.Quote(s); err == nil && q.C > 0 {
-					p = q.C
+			} else {
+				if v, err := service.GetUSPrice(s); err == nil && v > 0 {
+					p = v
 				}
 			}
 			if p > 0 {

@@ -5,9 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/indramahaarta/netwise/internal/middleware"
 	"github.com/indramahaarta/netwise/internal/service"
-	"github.com/indramahaarta/netwise/internal/util"
 )
 
 func (h *Handler) SearchStocks(c *gin.Context) {
@@ -34,28 +32,14 @@ func (h *Handler) SearchStocks(c *gin.Context) {
 		return
 	}
 
-	// US path — Finnhub.
-	userID := middleware.GetUserID(c)
-	user, err := h.queries.GetUserByID(c, userID)
+	// US path — Yahoo Finance, no API key required.
+	results, err := service.SearchUSStocks(query)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "user not found")
+		respondError(c, http.StatusBadGateway, "stock search failed: "+err.Error())
 		return
 	}
-	if !user.FinnhubApiKey.Valid {
-		respondError(c, http.StatusBadRequest, "Finnhub API key not configured")
-		return
+	if results == nil {
+		results = []service.SearchResult{}
 	}
-	finnhubKey, err := util.DecryptAES(user.FinnhubApiKey.String, h.cfg.AESKey)
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, "failed to decrypt API key")
-		return
-	}
-
-	fc := service.NewFinnhubClient(finnhubKey)
-	results, err := fc.Search(query)
-	if err != nil {
-		respondError(c, http.StatusBadGateway, "Finnhub search failed: "+err.Error())
-		return
-	}
-	c.JSON(http.StatusOK, results)
+	c.JSON(http.StatusOK, gin.H{"count": len(results), "result": results})
 }

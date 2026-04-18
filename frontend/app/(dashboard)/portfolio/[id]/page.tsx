@@ -1,9 +1,10 @@
 'use client'
 
-import { use, useState } from 'react'
+import { use, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { usePortfolio, usePortfolioRealized } from '@/hooks/use-portfolios'
 import { useHoldings } from '@/hooks/use-holdings'
+import { usePortfolioSnapshots } from '@/hooks/use-networth'
 import { useAmount } from '@/context/ui-settings'
 import { BuySellDialog } from '@/components/dialogs/buy-sell-dialog'
 import { CashFlowDialog } from '@/components/dialogs/cash-flow-dialog'
@@ -22,9 +23,41 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Legend,
+} from 'recharts'
 import { TrendingUp, TrendingDown, ArrowLeft } from 'lucide-react'
 
 type DialogType = 'buy' | 'sell' | 'deposit' | 'withdraw' | 'dividend' | 'fee' | null
+
+const CHART_RANGES = ['1W', '1M', '3M', 'YTD', '1Y', '5Y', 'ALL'] as const
+const CHART_LINES = [
+  { key: 'netWorth', label: 'Net Worth', color: '#3b82f6' },
+  { key: 'equity', label: 'Equity', color: '#22c55e' },
+  { key: 'invested', label: 'Invested', color: '#f59e0b' },
+  { key: 'cash', label: 'Cash', color: '#06b6d4' },
+  { key: 'unrealized', label: 'Unrealized P&L', color: '#8b5cf6' },
+  { key: 'realized', label: 'Realized P&L', color: '#ec4899' },
+] as const
+
+type ChartLineKey = (typeof CHART_LINES)[number]['key']
+
+interface PortfolioChartPoint {
+  date: string
+  netWorth?: number
+  equity?: number
+  invested?: number
+  cash?: number
+  unrealized?: number
+  realized?: number
+}
+
+function formatDate(dateStr: string) {
+  if (dateStr === 'Today') return 'Today'
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 
 export default function PortfolioPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -33,7 +66,79 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
   const { data: realizedData } = usePortfolioRealized(id)
   const [dialog, setDialog] = useState<DialogType>(null)
   const [selectedSymbol, setSelectedSymbol] = useState<string>()
+  const [chartRange, setChartRange] = useState<string>('1M')
+  const [activeChartLines, setActiveChartLines] = useState<Set<ChartLineKey>>(
+    new Set(['netWorth'])
+  )
+  const { data: snapshots, isLoading: snapLoading } = usePortfolioSnapshots(
+    id,
+    chartRange,
+    portfolio?.currency as 'USD' | 'IDR'
+  )
   const fmtAmt = useAmount()
+
+  // Build chart data from snapshots
+  const chartData = useMemo<PortfolioChartPoint[]>(() => {
+    const points: PortfolioChartPoint[] = (snapshots ?? []).map((row) => {
+      const eq = parseFloat(row.total_equity)
+      const inv = parseFloat(row.total_invested)
+      const cash = parseFloat(row.cash_balance)
+      const unr = parseFloat(row.unrealized)
+      const real = parseFloat(row.realized)
+      const nw = eq + cash
+      return {
+        date: formatDate(row.snapshot_date),
+        netWorth: nw,
+        equity: eq,
+        invested: inv,
+        cash,
+        unrealized: unr,
+        realized: real,
+      }
+    })
+
+    // Append today's live point if it's not already in snapshots
+    if (holdings && portfolio && points.length > 0) {
+      const lastSnapshot = new Date(snapshots?.[snapshots.length - 1]?.snapshot_date || '')
+      const today = new Date()
+      const isTodayIncluded =
+        lastSnapshot.getUTCFullYear() === today.getFullYear() &&
+        lastSnapshot.getUTCMonth() === today.getMonth() &&
+        lastSnapshot.getUTCDate() === today.getDate()
+
+      if (!isTodayIncluded) {
+        const equity = holdings.reduce((s, h) => s + parseFloat(h.equity), 0)
+        const invested = holdings.reduce((s, h) => s + parseFloat(h.invested), 0)
+        const cash = parseFloat(portfolio.cash)
+        const unrealized = equity - invested
+        const realized = realizedData?.realized_pnl ? parseFloat(realizedData.realized_pnl) : 0
+        points.push({
+          date: 'Today',
+          netWorth: equity + cash,
+          equity,
+          invested,
+          cash,
+          unrealized,
+          realized,
+        })
+      }
+    }
+
+    return points
+  }, [snapshots, holdings, portfolio, realizedData])
+
+  function toggleChartLine(key: ChartLineKey) {
+    setActiveChartLines((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        if (next.size === 1) return prev // keep at least 1
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
 
   if (pLoading) {
     return (
@@ -137,6 +242,87 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
           </div>
         )
       })()}
+
+      {/* Portfolio History Chart */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="text-sm">Portfolio History</CardTitle>
+          <div className="flex gap-1">
+            {CHART_RANGES.map((r) => (
+              <Button
+                key={r}
+                size="sm"
+                variant={chartRange === r ? 'default' : 'ghost'}
+                onClick={() => setChartRange(r)}
+              >
+                {r}
+              </Button>
+            ))}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* Line toggles */}
+          <div className="flex flex-wrap gap-2">
+            {CHART_LINES.map((line) => {
+              const active = activeChartLines.has(line.key)
+              return (
+                <button
+                  key={line.key}
+                  type="button"
+                  onClick={() => toggleChartLine(line.key)}
+                  className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-opacity ${
+                    active ? 'bg-accent' : 'opacity-40'
+                  }`}
+                >
+                  <span
+                    className="inline-block h-2 w-2 rounded-full shrink-0"
+                    style={{ background: line.color }}
+                  />
+                  {line.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Chart */}
+          {snapLoading ? (
+            <Skeleton className="h-64 w-full" />
+          ) : chartData.length === 0 ? (
+            <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+              No snapshots yet — generated daily.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={chartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} width={70} domain={['dataMin', 'dataMax']} />
+                <Tooltip
+                  contentStyle={{
+                    background: 'hsl(var(--popover))',
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: 6,
+                    fontSize: 12,
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                {CHART_LINES.filter((l) => activeChartLines.has(l.key)).map((line) => (
+                  <Line
+                    key={line.key}
+                    type="monotone"
+                    dataKey={line.key}
+                    name={line.label}
+                    stroke={line.color}
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Holdings Table */}
       <Card>

@@ -9,7 +9,6 @@ import (
 
 	"github.com/indramahaarta/netwise/internal/config"
 	db "github.com/indramahaarta/netwise/internal/db/sqlc"
-	"github.com/indramahaarta/netwise/internal/util"
 )
 
 // RunDailySnapshot generates portfolio_snapshot, ticker_snapshot, and wallet_snapshot rows for today.
@@ -21,7 +20,7 @@ func RunDailySnapshot(ctx context.Context, queries *db.Queries, cfg *config.Conf
 		return err
 	}
 	for _, p := range portfolios {
-		if err := snapshotPortfolio(ctx, queries, cfg, p, today); err != nil {
+		if err := snapshotPortfolio(ctx, queries, p, today); err != nil {
 			log.Printf("snapshot error for portfolio %d: %v", p.ID, err)
 		}
 	}
@@ -69,17 +68,7 @@ func snapshotWallet(ctx context.Context, queries *db.Queries, w db.Wallet, idrTo
 	return err
 }
 
-func snapshotPortfolio(ctx context.Context, queries *db.Queries, cfg *config.Config, p db.Portfolio, today time.Time) error {
-	user, err := queries.GetUserByID(ctx, p.UserID)
-	if err != nil {
-		return err
-	}
-
-	var finnhubKey string
-	if user.FinnhubApiKey.Valid {
-		finnhubKey, _ = util.DecryptAES(user.FinnhubApiKey.String, cfg.AESKey)
-	}
-
+func snapshotPortfolio(ctx context.Context, queries *db.Queries, p db.Portfolio, today time.Time) error {
 	holdings, err := queries.ListHoldingsByPortfolio(ctx, p.ID)
 	if err != nil {
 		return err
@@ -96,14 +85,14 @@ func snapshotPortfolio(ctx context.Context, queries *db.Queries, cfg *config.Con
 
 		var livePrice decimal.Decimal
 		if IsIDRNativeSymbol(h.Symbol) {
-			// IDX stocks (.JK) and IDR crypto (-IDR) → Yahoo Finance (no API key needed)
-			if p, err := GetIDRPrice(h.Symbol); err == nil && p > 0 {
-				livePrice = decimal.NewFromFloat(p)
+			// IDX stocks (.JK) and IDR crypto (-IDR) — already IDR-priced on Yahoo Finance
+			if price, err := GetIDRPrice(h.Symbol); err == nil && price > 0 {
+				livePrice = decimal.NewFromFloat(price)
 			}
-		} else if finnhubKey != "" {
-			fc := NewFinnhubClient(finnhubKey)
-			if q, err := fc.Quote(h.Symbol); err == nil && q.C > 0 {
-				livePrice = decimal.NewFromFloat(q.C)
+		} else {
+			// US stocks and other Yahoo Finance symbols
+			if price, err := yahooChartPrice(h.Symbol); err == nil && price > 0 {
+				livePrice = decimal.NewFromFloat(price)
 			}
 		}
 		if livePrice.IsZero() {
@@ -163,7 +152,7 @@ func RunSnapshotForDate(ctx context.Context, queries *db.Queries, cfg *config.Co
 		return err
 	}
 	for _, p := range portfolios {
-		if err := snapshotPortfolioForDate(ctx, queries, cfg, p, d); err != nil {
+		if err := snapshotPortfolioForDate(ctx, queries, p, d); err != nil {
 			log.Printf("historical snapshot error for portfolio %d: %v", p.ID, err)
 		}
 	}
@@ -193,7 +182,7 @@ func RunSnapshotForDate(ctx context.Context, queries *db.Queries, cfg *config.Co
 // This is acceptable for nightly snapshots (run at EOD with correct holdings).
 // For historical backfill, quantities will be wrong if holdings changed after the target date.
 // TODO: implement GetHoldingsAsOfDate from transaction history for accurate backfill.
-func snapshotPortfolioForDate(ctx context.Context, queries *db.Queries, cfg *config.Config, p db.Portfolio, date time.Time) error {
+func snapshotPortfolioForDate(ctx context.Context, queries *db.Queries, p db.Portfolio, date time.Time) error {
 	holdings, err := queries.ListHoldingsByPortfolio(ctx, p.ID)
 	if err != nil {
 		return err

@@ -8,9 +8,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	db "github.com/indramahaarta/netwise/internal/db/sqlc"
-	"github.com/indramahaarta/netwise/internal/middleware"
 	"github.com/indramahaarta/netwise/internal/service"
-	"github.com/indramahaarta/netwise/internal/util"
 )
 
 type buyRequest struct {
@@ -29,7 +27,6 @@ type sellRequest struct {
 
 func (h *Handler) BuyStock(c *gin.Context) {
 	portfolioID := getPortfolioID(c)
-	userID := middleware.GetUserID(c)
 
 	var req buyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -37,14 +34,7 @@ func (h *Handler) BuyStock(c *gin.Context) {
 		return
 	}
 
-	user, err := h.queries.GetUserByID(c, userID)
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, "user not found")
-		return
-	}
-
-	// Resolve ticker metadata — route to Yahoo Finance for IDX symbols,
-	// Finnhub for everything else.
+	// Resolve ticker metadata — Yahoo Finance for all symbols, no API key needed.
 	tickerName, tickerCurrency, tickerSector := req.Symbol, "USD", ""
 
 	if service.IsIDRNativeSymbol(req.Symbol) {
@@ -52,22 +42,9 @@ func (h *Handler) BuyStock(c *gin.Context) {
 		tickerName = name
 		tickerCurrency = currency
 	} else {
-		if !user.FinnhubApiKey.Valid {
-			respondError(c, http.StatusBadRequest, "Finnhub API key not configured")
-			return
-		}
-		finnhubKey, err := util.DecryptAES(user.FinnhubApiKey.String, h.cfg.AESKey)
-		if err != nil || finnhubKey == "" {
-			respondError(c, http.StatusInternalServerError, "failed to decrypt API key")
-			return
-		}
-		fc := service.NewFinnhubClient(finnhubKey)
-		if profile, err := fc.GetCompanyProfile(req.Symbol); err == nil && profile != nil && profile.Name != "" {
-			tickerName = profile.Name
-			if profile.Currency != "" {
-				tickerCurrency = profile.Currency
-			}
-			tickerSector = profile.Industry
+		if name, currency, err := service.GetUSProfile(req.Symbol); err == nil && name != "" {
+			tickerName = name
+			tickerCurrency = currency
 		}
 	}
 

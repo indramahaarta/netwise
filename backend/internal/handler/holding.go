@@ -7,9 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	db "github.com/indramahaarta/netwise/internal/db/sqlc"
-	"github.com/indramahaarta/netwise/internal/middleware"
 	"github.com/indramahaarta/netwise/internal/service"
-	"github.com/indramahaarta/netwise/internal/util"
 )
 
 type holdingResponse struct {
@@ -29,9 +27,8 @@ type holdingResponse struct {
 }
 
 // livePrice fetches the current price for a symbol, using the cache first.
-// IDR-native symbols (.JK stocks, -IDR crypto) are routed to Yahoo Finance;
-// everything else goes to Finnhub.
-func livePrice(symbol string, fc *service.FinnhubClient) float64 {
+// All symbols are routed to Yahoo Finance — IDR-native via GetIDRPrice, others via GetUSPrice.
+func livePrice(symbol string) float64 {
 	if cached, ok := service.GetCachedPrice(symbol); ok {
 		return cached
 	}
@@ -40,9 +37,9 @@ func livePrice(symbol string, fc *service.FinnhubClient) float64 {
 		if v, err := service.GetIDRPrice(symbol); err == nil && v > 0 {
 			p = v
 		}
-	} else if fc != nil {
-		if q, err := fc.Quote(symbol); err == nil && q.C > 0 {
-			p = q.C
+	} else {
+		if v, err := service.GetUSPrice(symbol); err == nil && v > 0 {
+			p = v
 		}
 	}
 	if p > 0 {
@@ -53,25 +50,11 @@ func livePrice(symbol string, fc *service.FinnhubClient) float64 {
 
 func (h *Handler) ListHoldings(c *gin.Context) {
 	portfolioID := getPortfolioID(c)
-	userID := middleware.GetUserID(c)
-
-	user, err := h.queries.GetUserByID(c, userID)
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, "user not found")
-		return
-	}
 
 	holdings, err := h.queries.ListHoldingsByPortfolio(c, portfolioID)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to list holdings")
 		return
-	}
-
-	var fc *service.FinnhubClient
-	if user.FinnhubApiKey.Valid {
-		if key, err := util.DecryptAES(user.FinnhubApiKey.String, h.cfg.AESKey); err == nil && key != "" {
-			fc = service.NewFinnhubClient(key)
-		}
 	}
 
 	result := make([]holdingResponse, 0, len(holdings))
@@ -80,7 +63,7 @@ func (h *Handler) ListHoldings(c *gin.Context) {
 		avg := decimalFromString(h2.Avg)
 		invested := shares.Mul(avg)
 
-		price := livePrice(h2.Symbol, fc)
+		price := livePrice(h2.Symbol)
 		livePriceD := decimal.NewFromFloat(price)
 		equity := shares.Mul(livePriceD)
 		unrealized := equity.Sub(invested)
@@ -117,17 +100,10 @@ type addHoldingDirectRequest struct {
 
 func (h *Handler) AddHoldingDirect(c *gin.Context) {
 	portfolioID := getPortfolioID(c)
-	userID := middleware.GetUserID(c)
 
 	var req addHoldingDirectRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	user, err := h.queries.GetUserByID(c, userID)
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, "user not found")
 		return
 	}
 
@@ -137,16 +113,10 @@ func (h *Handler) AddHoldingDirect(c *gin.Context) {
 		name, currency, _ := service.GetIDRProfile(req.Symbol)
 		tickerName = name
 		tickerCurrency = currency
-	} else if user.FinnhubApiKey.Valid {
-		if finnhubKey, err := util.DecryptAES(user.FinnhubApiKey.String, h.cfg.AESKey); err == nil && finnhubKey != "" {
-			fc := service.NewFinnhubClient(finnhubKey)
-			if profile, err := fc.GetCompanyProfile(req.Symbol); err == nil && profile != nil && profile.Name != "" {
-				tickerName = profile.Name
-				if profile.Currency != "" {
-					tickerCurrency = profile.Currency
-				}
-				tickerSector = profile.Industry
-			}
+	} else {
+		if name, currency, err := service.GetUSProfile(req.Symbol); err == nil && name != "" {
+			tickerName = name
+			tickerCurrency = currency
 		}
 	}
 

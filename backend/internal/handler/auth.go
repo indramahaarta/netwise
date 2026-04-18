@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"database/sql"
 	"net/http"
 	"time"
 
@@ -11,10 +10,9 @@ import (
 )
 
 type registerRequest struct {
-	Username     string `json:"username" binding:"required,min=2,max=100"`
-	Email        string `json:"email" binding:"required,email"`
-	Password     string `json:"password" binding:"required,min=8"`
-	FinnhubAPIKey string `json:"finnhub_api_key"`
+	Username string `json:"username" binding:"required,min=2,max=100"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=8"`
 }
 
 type loginRequest struct {
@@ -35,21 +33,10 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	var encryptedKey sql.NullString
-	if req.FinnhubAPIKey != "" {
-		enc, err := util.EncryptAES(req.FinnhubAPIKey, h.cfg.AESKey)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encrypt API key"})
-			return
-		}
-		encryptedKey = sql.NullString{String: enc, Valid: true}
-	}
-
 	user, err := h.queries.CreateUser(c, db.CreateUserParams{
-		Username:      req.Username,
-		Email:         req.Email,
-		Password:      hashed,
-		FinnhubApiKey: encryptedKey,
+		Username: req.Username,
+		Email:    req.Email,
+		Password: hashed,
 	})
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})

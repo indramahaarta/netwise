@@ -11,6 +11,14 @@ import (
 
 const yahooBase = "https://query2.finance.yahoo.com"
 
+// SearchResult is the unified stock/asset search result returned by all search functions.
+type SearchResult struct {
+	Symbol        string `json:"symbol"`
+	Description   string `json:"description"`
+	Type          string `json:"type"`
+	DisplaySymbol string `json:"displaySymbol"`
+}
+
 var yahooHTTP = &http.Client{}
 
 // IsIDXSymbol reports whether a symbol is an Indonesian stock (IDX).
@@ -25,9 +33,9 @@ func IsIDRCryptoSymbol(symbol string) bool {
 	return strings.HasSuffix(strings.ToUpper(symbol), "-IDR")
 }
 
-// IsIDRNativeSymbol reports whether a symbol is natively priced in IDR and
-// should be fetched from Yahoo Finance rather than Finnhub.
+// IsIDRNativeSymbol reports whether a symbol is natively priced in IDR.
 // Covers Indonesian stocks (.JK) and IDR crypto pairs (-IDR).
+// All other symbols are assumed to be USD-denominated and fetched from Yahoo Finance.
 func IsIDRNativeSymbol(symbol string) bool {
 	return IsIDXSymbol(symbol) || IsIDRCryptoSymbol(symbol)
 }
@@ -358,9 +366,68 @@ func GetHistoricalClosePrice(symbol string, date time.Time) (float64, error) {
 	return yahooHistoricalClose(symbol, date)
 }
 
+// SearchUSStocks queries Yahoo Finance for US (and global) equity symbols matching the given query.
+// No API key is required.
+func SearchUSStocks(query string) ([]SearchResult, error) {
+	u := fmt.Sprintf(
+		"%s/v1/finance/search?q=%s&quotesCount=20&newsCount=0&listsCount=0",
+		yahooBase, url.QueryEscape(query),
+	)
+
+	resp, err := yahooRequest(u)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var payload struct {
+		Quotes []struct {
+			Symbol    string `json:"symbol"`
+			ShortName string `json:"shortname"`
+			LongName  string `json:"longname"`
+			QuoteType string `json:"quoteType"`
+		} `json:"quotes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+
+	var out []SearchResult
+	for _, q := range payload.Quotes {
+		if q.QuoteType != "EQUITY" {
+			continue
+		}
+		name := q.LongName
+		if name == "" {
+			name = q.ShortName
+		}
+		out = append(out, SearchResult{
+			Symbol:        q.Symbol,
+			Description:   name,
+			Type:          "Equity",
+			DisplaySymbol: q.Symbol,
+		})
+	}
+	return out, nil
+}
+
+// GetUSPrice fetches the current market price for any Yahoo Finance symbol (US stocks, ETFs, etc.).
+func GetUSPrice(symbol string) (float64, error) {
+	return yahooChartPrice(symbol)
+}
+
+// GetUSProfile fetches the name and currency for a US stock symbol via Yahoo Finance.
+func GetUSProfile(symbol string) (name, currency string, err error) {
+	n, cur := yahooChartProfile(symbol)
+	if cur == "" {
+		cur = "USD"
+	}
+	return n, cur, nil
+}
+
 // Deprecated aliases kept for callers not yet migrated.
 var (
-	GetIDXPrice   = GetIDRPrice
-	GetIDXProfile = GetIDRProfile
+	GetIDXPrice     = GetIDRPrice
+	GetIDXProfile   = GetIDRProfile
 	SearchIDXStocks = SearchIDRAssets
 )

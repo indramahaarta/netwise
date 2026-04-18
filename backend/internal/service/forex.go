@@ -7,7 +7,6 @@ import (
 )
 
 // GetFreeForexRate fetches the exchange rate from open.er-api.com (no API key required).
-// Used as a fallback when Finnhub forex returns 0 (free-plan limitation).
 func GetFreeForexRate(fromCurrency, toCurrency string) (float64, error) {
 	url := fmt.Sprintf("https://open.er-api.com/v6/latest/%s", fromCurrency)
 	resp, err := http.Get(url) //nolint:gosec

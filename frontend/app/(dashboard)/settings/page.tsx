@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { Badge } from '@/components/ui/badge'
 
 export default function SettingsPage() {
   const { data: user } = useProfile()
@@ -16,7 +15,6 @@ export default function SettingsPage() {
 
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
-  const [apiKey, setApiKey] = useState('')
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
 
@@ -32,12 +30,7 @@ export default function SettingsPage() {
     setError('')
     setSuccess('')
     try {
-      await update.mutateAsync({
-        username,
-        email,
-        ...(apiKey ? { finnhub_api_key: apiKey } : {}),
-      })
-      setApiKey('')
+      await update.mutateAsync({ username, email })
       setSuccess('Profile updated successfully')
     } catch {
       setError('Failed to update profile')
@@ -51,7 +44,7 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Profile</CardTitle>
-          <CardDescription>Update your account details and Finnhub API key</CardDescription>
+          <CardDescription>Update your account details</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -71,24 +64,6 @@ export default function SettingsPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="apikey">Finnhub API Key</Label>
-                {user?.has_finnhub_api_key && (
-                  <Badge variant="outline" className="text-xs">Configured</Badge>
-                )}
-              </div>
-              <Input
-                id="apikey"
-                type="password"
-                placeholder={user?.has_finnhub_api_key ? 'Leave blank to keep existing key' : 'Enter your Finnhub API key'}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Used for live stock prices and forex rates. Get yours at finnhub.io
-              </p>
             </div>
             {success && <p className="text-sm text-green-600">{success}</p>}
             {error && <p className="text-sm text-destructive">{error}</p>}

@@ -2,7 +2,6 @@ export interface User {
   id: number
   username: string
   email: string
-  has_finnhub_api_key: boolean
   created_time: string
 }
 

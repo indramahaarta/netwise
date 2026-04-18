@@ -28,7 +28,6 @@ export function useRegister() {
       username: string
       email: string
       password: string
-      finnhub_api_key?: string
     }) => api.post('/api/v1/auth/register', data).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['profile'] }),
   })
@@ -51,7 +50,6 @@ export function useUpdateProfile() {
     mutationFn: (data: {
       username?: string
       email?: string
-      finnhub_api_key?: string
     }) => api.put('/api/v1/user/profile', data).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['profile'] }),
   })

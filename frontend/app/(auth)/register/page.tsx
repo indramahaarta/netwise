@@ -16,7 +16,6 @@ export default function RegisterPage() {
     username: '',
     email: '',
     password: '',
-    finnhub_api_key: '',
   })
   const [error, setError] = useState('')
 
@@ -78,16 +77,6 @@ export default function RegisterPage() {
                 onChange={handleChange}
                 required
                 minLength={8}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="finnhub_api_key">Finnhub API Key</Label>
-              <Input
-                id="finnhub_api_key"
-                name="finnhub_api_key"
-                placeholder="Optional — used for live prices"
-                value={form.finnhub_api_key}
-                onChange={handleChange}
               />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
