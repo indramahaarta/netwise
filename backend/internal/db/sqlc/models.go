@@ -50,6 +50,14 @@ type Portfolio struct {
 	CreatedTime time.Time `json:"created_time"`
 }
 
+type PortfolioFee struct {
+	ID              int64          `json:"id"`
+	PortfolioID     int64          `json:"portfolio_id"`
+	Amount          string         `json:"amount"`
+	Note            sql.NullString `json:"note"`
+	TransactionTime time.Time      `json:"transaction_time"`
+}
+
 type PortfolioSnapshot struct {
 	ID            int64     `json:"id"`
 	PortfolioID   int64     `json:"portfolio_id"`

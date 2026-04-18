@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql"
 	"net/http"
 	"time"
 
@@ -10,36 +11,29 @@ import (
 	db "github.com/indramahaarta/netwise/internal/db/sqlc"
 )
 
-type addDividendRequest struct {
-	Symbol   string  `json:"symbol" binding:"required"`
-	Amount   float64 `json:"amount" binding:"required,gt=0"`
-	Currency string  `json:"currency" binding:"required"`
+type addFeeRequest struct {
+	Amount float64 `json:"amount" binding:"required,gt=0"`
+	Note   *string `json:"note"`
 }
 
-func (h *Handler) AddDividend(c *gin.Context) {
+func (h *Handler) AddFee(c *gin.Context) {
 	portfolioID := getPortfolioID(c)
 
-	var req addDividendRequest
+	var req addFeeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	ticker, err := h.queries.GetTickerBySymbol(c, req.Symbol)
-	if err != nil {
-		respondError(c, http.StatusBadRequest, "ticker not found")
-		return
-	}
-
 	amount := decimal.NewFromFloat(req.Amount)
 
-	// Add dividend amount to portfolio cash (assumes same currency as portfolio)
 	portfolio, err := h.queries.GetPortfolio(c, portfolioID)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to fetch portfolio")
 		return
 	}
-	newCash := decimalFromString(portfolio.Cash).Add(amount)
+
+	newCash := decimalFromString(portfolio.Cash).Sub(amount)
 	if _, err := h.queries.UpdatePortfolioCash(c, db.UpdatePortfolioCashParams{
 		ID:   portfolioID,
 		Cash: newCash.StringFixed(8),
@@ -48,39 +42,43 @@ func (h *Handler) AddDividend(c *gin.Context) {
 		return
 	}
 
-	div, err := h.queries.CreateDividend(c, db.CreateDividendParams{
+	var note sql.NullString
+	if req.Note != nil && *req.Note != "" {
+		note = sql.NullString{String: *req.Note, Valid: true}
+	}
+
+	fee, err := h.queries.CreatePortfolioFee(c, db.CreatePortfolioFeeParams{
 		PortfolioID:     portfolioID,
-		TickerID:        ticker.ID,
-		Currency:        req.Currency,
 		Amount:          amount.StringFixed(8),
+		Note:            note,
 		TransactionTime: time.Now(),
 	})
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "failed to record dividend")
+		respondError(c, http.StatusInternalServerError, "failed to record fee")
 		return
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"dividend":     div,
+		"fee":          fee,
 		"cash_balance": newCash,
 	})
 }
 
-func (h *Handler) ListDividends(c *gin.Context) {
+func (h *Handler) ListFees(c *gin.Context) {
 	portfolioID := getPortfolioID(c)
 
 	limit := queryInt(c, "limit", 50)
 	offset := queryInt(c, "offset", 0)
 
-	divs, err := h.queries.ListDividends(c, db.ListDividendsParams{
+	fees, err := h.queries.ListPortfolioFees(c, db.ListPortfolioFeesParams{
 		PortfolioID: portfolioID,
 		Limit:       limit,
 		Offset:      offset,
 	})
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, "failed to list dividends")
+		respondError(c, http.StatusInternalServerError, "failed to list fees")
 		return
 	}
 
-	c.JSON(http.StatusOK, divs)
+	c.JSON(http.StatusOK, fees)
 }

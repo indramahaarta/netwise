@@ -100,6 +100,9 @@ func RegisterProtectedRoutes(r *gin.RouterGroup, queries *db.Queries, cfg *confi
 
 			p.POST("/dividends", h.AddDividend)
 			p.GET("/dividends", h.ListDividends)
+
+			p.POST("/fees", h.AddFee)
+			p.GET("/fees", h.ListFees)
 		}
 	}
 }

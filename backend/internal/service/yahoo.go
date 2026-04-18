@@ -125,6 +125,36 @@ func SearchIDRAssets(query string) ([]SearchResult, error) {
 			DisplaySymbol: displaySymbol,
 		})
 	}
+
+	// Fallback: if query looks like a bare ticker and {QUERY}.JK isn't already
+	// in results, probe it directly via the chart API. Handles stocks not in
+	// Yahoo's search index (e.g. less-traded IDX stocks like IMPC).
+	upperQuery := strings.ToUpper(query)
+	if !strings.ContainsAny(upperQuery, " .-") {
+		directSymbol := upperQuery + ".JK"
+		alreadyFound := false
+		for _, r := range out {
+			if strings.EqualFold(r.Symbol, directSymbol) {
+				alreadyFound = true
+				break
+			}
+		}
+		if !alreadyFound {
+			if name, currency := yahooChartProfile(directSymbol); currency != "" {
+				if name == "" {
+					name = directSymbol
+				}
+				// Prepend so exact ticker match appears first
+				out = append([]SearchResult{{
+					Symbol:        directSymbol,
+					Description:   name,
+					Type:          "Equity",
+					DisplaySymbol: upperQuery,
+				}}, out...)
+			}
+		}
+	}
+
 	return out, nil
 }
 
@@ -321,7 +351,7 @@ func GetHistoricalClosePrice(symbol string, date time.Time) (float64, error) {
 		}
 		rate, err := usdToIDRRate()
 		if err != nil {
-			return usdPrice, nil // fallback: return USD price without conversion
+			return 0, err
 		}
 		return usdPrice * rate, nil
 	}

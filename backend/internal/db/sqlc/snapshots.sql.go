@@ -10,6 +10,17 @@ import (
 	"time"
 )
 
+const countPortfolioSnapshotsForDate = `-- name: CountPortfolioSnapshotsForDate :one
+SELECT COUNT(*) FROM portfolio_snapshot WHERE snapshot_date = $1
+`
+
+func (q *Queries) CountPortfolioSnapshotsForDate(ctx context.Context, snapshotDate time.Time) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPortfolioSnapshotsForDate, snapshotDate)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const listNetWorthSnapshots = `-- name: ListNetWorthSnapshots :many
 WITH portfolio_daily AS (
     SELECT ps.snapshot_date,

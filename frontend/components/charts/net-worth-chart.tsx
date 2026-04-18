@@ -60,6 +60,14 @@ function formatValue(v: number, currency: string) {
   }).format(v)
 }
 
+function formatValueFull(v: number, currency: string) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 2,
+  }).format(v)
+}
+
 function isTodayCovered(points: ChartPoint[]): boolean {
   if (points.length === 0) return false
   return points[points.length - 1].date === 'Today'
@@ -129,7 +137,7 @@ function mergePortfolioSnapshots(
 export function NetWorthChart({ currency, liveData, portfolios = [] }: Props) {
   const [range, setRange] = useState<string>('1M')
   const [activeLines, setActiveLines] = useState<Set<LineKey>>(
-    new Set(['netWorth', 'equity', 'cash'] as const)
+    new Set(['netWorth'] as const)
   )
   const [selectedPortfolioIds, setSelectedPortfolioIds] = useState<number[] | 'all'>('all')
   const [lastClickedLine, setLastClickedLine] = useState<LineKey | null>(null)
@@ -349,9 +357,10 @@ export function NetWorthChart({ currency, liveData, portfolios = [] }: Props) {
               tickFormatter={(v) => formatValue(v, currency)}
               tick={{ fontSize: 11 }}
               width={70}
+              domain={['dataMin', 'dataMax']}
             />
             <Tooltip
-              formatter={(v, name) => [formatValue(Number(v), currency), name]}
+              formatter={(v, name) => [formatValueFull(Number(v), currency), name]}
               contentStyle={{
                 background: 'hsl(var(--popover))',
                 border: '1px solid hsl(var(--border))',

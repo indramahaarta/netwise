@@ -79,3 +79,6 @@ FROM all_dates d
 LEFT JOIN portfolio_daily pd ON pd.snapshot_date = d.snapshot_date
 LEFT JOIN wallet_daily    wd ON wd.snapshot_date = d.snapshot_date
 ORDER BY d.snapshot_date ASC;
+
+-- name: CountPortfolioSnapshotsForDate :one
+SELECT COUNT(*) FROM portfolio_snapshot WHERE snapshot_date = $1;

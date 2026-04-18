@@ -199,7 +199,11 @@ func (h *Handler) SellStock(c *gin.Context) {
 	proceeds := qty.Mul(price).Sub(fee)
 	realizedGain := price.Sub(avgCost).Mul(qty).Sub(fee)
 
-	portfolio, _ := h.queries.GetPortfolio(c, portfolioID)
+	portfolio, err := h.queries.GetPortfolio(c, portfolioID)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to fetch portfolio")
+		return
+	}
 	newCash := decimalFromString(portfolio.Cash).Add(proceeds)
 
 	newShares := currentShares.Sub(qty)

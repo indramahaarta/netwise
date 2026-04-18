@@ -26,3 +26,14 @@ SELECT COALESCE(
 )::NUMERIC AS balance
 FROM wallet_transaction
 WHERE wallet_id = $1;
+
+-- name: GetWalletBalanceAsOf :one
+SELECT COALESCE(
+    SUM(CASE
+        WHEN type IN ('INCOME', 'TRANSFER_IN', 'PORTFOLIO_WITHDRAWAL') THEN amount
+        ELSE -amount
+    END), 0
+)::NUMERIC AS balance
+FROM wallet_transaction
+WHERE wallet_id = $1
+  AND transaction_time <= $2;

@@ -8,6 +8,7 @@ import { useAmount } from '@/context/ui-settings'
 import { BuySellDialog } from '@/components/dialogs/buy-sell-dialog'
 import { CashFlowDialog } from '@/components/dialogs/cash-flow-dialog'
 import { DividendDialog } from '@/components/dialogs/dividend-dialog'
+import { FeeDialog } from '@/components/dialogs/fee-dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -23,7 +24,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { TrendingUp, TrendingDown, ArrowLeft } from 'lucide-react'
 
-type DialogType = 'buy' | 'sell' | 'deposit' | 'withdraw' | 'dividend' | null
+type DialogType = 'buy' | 'sell' | 'deposit' | 'withdraw' | 'dividend' | 'fee' | null
 
 export default function PortfolioPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -73,6 +74,9 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
         <Button size="sm" variant="secondary" onClick={() => setDialog('dividend')}>
           + Dividend
         </Button>
+        <Button size="sm" variant="secondary" onClick={() => setDialog('fee')}>
+          - Fee
+        </Button>
         <Link href={`/portfolio/${id}/transactions`}>
           <Button size="sm" variant="ghost">Transactions</Button>
         </Link>
@@ -81,6 +85,9 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
         </Link>
         <Link href={`/portfolio/${id}/dividends`}>
           <Button size="sm" variant="ghost">Dividends</Button>
+        </Link>
+        <Link href={`/portfolio/${id}/fees`}>
+          <Button size="sm" variant="ghost">Fees</Button>
         </Link>
         <Link href={`/portfolio/${id}/import`}>
           <Button size="sm" variant="outline">Import Holdings</Button>
@@ -272,6 +279,14 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
       )}
       {dialog === 'dividend' && (
         <DividendDialog
+          portfolioId={id}
+          portfolioCurrency={portfolio.currency}
+          open
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog === 'fee' && (
+        <FeeDialog
           portfolioId={id}
           portfolioCurrency={portfolio.currency}
           open

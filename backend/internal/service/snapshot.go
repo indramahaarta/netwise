@@ -14,7 +14,7 @@ import (
 
 // RunDailySnapshot generates portfolio_snapshot, ticker_snapshot, and wallet_snapshot rows for today.
 func RunDailySnapshot(ctx context.Context, queries *db.Queries, cfg *config.Config) error {
-	today := time.Now().UTC().Truncate(24 * time.Hour)
+	today := time.Now().UTC().Truncate(24 * time.Hour).Add(-24 * time.Hour)
 
 	portfolios, err := listAllPortfolios(ctx, queries)
 	if err != nil {
@@ -48,7 +48,12 @@ func RunDailySnapshot(ctx context.Context, queries *db.Queries, cfg *config.Conf
 }
 
 func snapshotWallet(ctx context.Context, queries *db.Queries, w db.Wallet, idrToUsd decimal.Decimal, today time.Time) error {
-	balance, err := queries.GetWalletBalance(ctx, w.ID)
+	// Use end-of-day boundary so transactions made during `today` are included.
+	endOfDay := today.Add(24*time.Hour - time.Nanosecond)
+	balance, err := queries.GetWalletBalanceAsOf(ctx, db.GetWalletBalanceAsOfParams{
+		WalletID:        w.ID,
+		TransactionTime: endOfDay,
+	})
 	if err != nil {
 		return err
 	}
@@ -163,7 +168,7 @@ func RunSnapshotForDate(ctx context.Context, queries *db.Queries, cfg *config.Co
 		}
 	}
 
-	// Wallet snapshots use current balance (wallets don't have historical pricing)
+	// Wallet snapshots use balance as of the snapshot date (transactions up to end of that day).
 	var idrToUsd float64 = 1
 	if rate, err := GetFreeForexRate("IDR", "USD"); err == nil && rate > 0 {
 		idrToUsd = rate
@@ -184,6 +189,10 @@ func RunSnapshotForDate(ctx context.Context, queries *db.Queries, cfg *config.Co
 	return nil
 }
 
+// NOTE: uses current holdings (ListHoldingsByPortfolio), not historical.
+// This is acceptable for nightly snapshots (run at EOD with correct holdings).
+// For historical backfill, quantities will be wrong if holdings changed after the target date.
+// TODO: implement GetHoldingsAsOfDate from transaction history for accurate backfill.
 func snapshotPortfolioForDate(ctx context.Context, queries *db.Queries, cfg *config.Config, p db.Portfolio, date time.Time) error {
 	holdings, err := queries.ListHoldingsByPortfolio(ctx, p.ID)
 	if err != nil {
@@ -199,18 +208,10 @@ func snapshotPortfolioForDate(ctx context.Context, queries *db.Queries, cfg *con
 		invested := shares.Mul(avg)
 		totalInvested = totalInvested.Add(invested)
 
-		// For historical snapshots, use historical prices (Yahoo Finance)
+		// For historical snapshots, use historical prices (Yahoo Finance for all symbols).
 		var livePrice decimal.Decimal
-		if IsIDRNativeSymbol(h.Symbol) {
-			// IDX stocks (.JK) and IDR crypto (-IDR) → Yahoo Finance historical
-			if p, err := GetHistoricalClosePrice(h.Symbol, date); err == nil && p > 0 {
-				livePrice = decimal.NewFromFloat(p)
-			}
-		} else {
-			// US stocks → Yahoo Finance historical (works for all symbols)
-			if p, err := GetHistoricalClosePrice(h.Symbol, date); err == nil && p > 0 {
-				livePrice = decimal.NewFromFloat(p)
-			}
+		if p, err := GetHistoricalClosePrice(h.Symbol, date); err == nil && p > 0 {
+			livePrice = decimal.NewFromFloat(p)
 		}
 		if livePrice.IsZero() {
 			// Fallback: use average cost if historical price unavailable

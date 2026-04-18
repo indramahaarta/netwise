@@ -166,6 +166,14 @@ export interface PortfolioSnapshot {
   currency: string
 }
 
+export interface PortfolioFee {
+  id: number
+  portfolio_id: number
+  amount: string
+  note: string | null
+  transaction_time: string
+}
+
 export interface StockSearchResult {
   symbol: string
   description: string

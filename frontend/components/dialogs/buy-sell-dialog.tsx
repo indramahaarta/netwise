@@ -35,7 +35,7 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
   const mutation = side === 'BUY' ? buy : sell
 
   const market = portfolioCurrency === 'IDR' ? 'ID' : 'US'
-  const { data: searchResults } = useStockSearch(searchQuery, market)
+  const { data: searchResults, isLoading: isSearching } = useStockSearch(searchQuery, market)
 
   const totalCost =
     parseFloat(quantity || '0') * parseFloat(price || '0') +
@@ -76,24 +76,37 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            {searchResults && searchResults.result?.length > 0 && searchQuery && (
+            {searchQuery && !isSearching && (
               <div className="border rounded-md max-h-36 overflow-y-auto">
-                {searchResults.result.slice(0, 8).map((r) => (
+                {searchResults?.result && searchResults.result.length > 0 ? (
+                  searchResults.result.slice(0, 8).map((r) => (
+                    <button
+                      key={r.symbol}
+                      type="button"
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center justify-between"
+                      onClick={() => {
+                        setSymbol(r.symbol)
+                        setSearchQuery('')
+                      }}
+                    >
+                      <span className="font-medium">{r.displaySymbol}</span>
+                      <span className="text-muted-foreground text-xs truncate ml-2">
+                        {r.description}
+                      </span>
+                    </button>
+                  ))
+                ) : (
                   <button
-                    key={r.symbol}
                     type="button"
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center justify-between"
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-accent"
                     onClick={() => {
-                      setSymbol(r.symbol)
+                      setSymbol(searchQuery.toUpperCase())
                       setSearchQuery('')
                     }}
                   >
-                    <span className="font-medium">{r.displaySymbol}</span>
-                    <span className="text-muted-foreground text-xs truncate ml-2">
-                      {r.description}
-                    </span>
+                    Use <span className="font-medium">{searchQuery.toUpperCase()}</span> directly
                   </button>
-                ))}
+                )}
               </div>
             )}
             {symbol && (

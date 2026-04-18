@@ -77,6 +77,30 @@ func (q *Queries) GetWalletBalance(ctx context.Context, walletID int64) (string,
 	return balance, err
 }
 
+const getWalletBalanceAsOf = `-- name: GetWalletBalanceAsOf :one
+SELECT COALESCE(
+    SUM(CASE
+        WHEN type IN ('INCOME', 'TRANSFER_IN', 'PORTFOLIO_WITHDRAWAL') THEN amount
+        ELSE -amount
+    END), 0
+)::NUMERIC AS balance
+FROM wallet_transaction
+WHERE wallet_id = $1
+  AND transaction_time <= $2
+`
+
+type GetWalletBalanceAsOfParams struct {
+	WalletID        int64     `json:"wallet_id"`
+	TransactionTime time.Time `json:"transaction_time"`
+}
+
+func (q *Queries) GetWalletBalanceAsOf(ctx context.Context, arg GetWalletBalanceAsOfParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getWalletBalanceAsOf, arg.WalletID, arg.TransactionTime)
+	var balance string
+	err := row.Scan(&balance)
+	return balance, err
+}
+
 const listWalletTransactions = `-- name: ListWalletTransactions :many
 SELECT
     wt.id, wt.wallet_id, wt.type, wt.amount, wt.category_id, wt.related_wallet_id, wt.related_portfolio_id, wt.broker_rate, wt.note, wt.transaction_time,

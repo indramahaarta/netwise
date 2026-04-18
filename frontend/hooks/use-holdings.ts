@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
-import type { Holding, Transaction, CashFlow, Dividend } from '@/lib/types'
+import type { Holding, Transaction, CashFlow, Dividend, PortfolioFee } from '@/lib/types'
 
 export function useHoldings(portfolioId: number | string) {
   return useQuery<Holding[]>({
@@ -133,6 +133,32 @@ export function useAddDividend(portfolioId: number | string) {
         .then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['dividends', portfolioId] })
+      qc.invalidateQueries({ queryKey: ['portfolios', portfolioId] })
+      qc.invalidateQueries({ queryKey: ['networth'] })
+    },
+  })
+}
+
+export function useFees(portfolioId: number | string) {
+  return useQuery<PortfolioFee[]>({
+    queryKey: ['fees', portfolioId],
+    queryFn: () =>
+      api
+        .get(`/api/v1/portfolios/${portfolioId}/fees`)
+        .then((r) => r.data),
+    enabled: !!portfolioId,
+  })
+}
+
+export function useAddFee(portfolioId: number | string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { amount: number; note?: string }) =>
+      api
+        .post(`/api/v1/portfolios/${portfolioId}/fees`, data)
+        .then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['fees', portfolioId] })
       qc.invalidateQueries({ queryKey: ['portfolios', portfolioId] })
       qc.invalidateQueries({ queryKey: ['networth'] })
     },

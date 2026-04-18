@@ -7,12 +7,15 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 type Querier interface {
+	CountPortfolioSnapshotsForDate(ctx context.Context, snapshotDate time.Time) (int64, error)
 	CreateCashFlow(ctx context.Context, arg CreateCashFlowParams) (CashFlow, error)
 	CreateDividend(ctx context.Context, arg CreateDividendParams) (Dividend, error)
 	CreatePortfolio(ctx context.Context, arg CreatePortfolioParams) (Portfolio, error)
+	CreatePortfolioFee(ctx context.Context, arg CreatePortfolioFeeParams) (PortfolioFee, error)
 	CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWallet(ctx context.Context, arg CreateWalletParams) (Wallet, error)
@@ -32,6 +35,7 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id int64) (User, error)
 	GetWallet(ctx context.Context, id int64) (Wallet, error)
 	GetWalletBalance(ctx context.Context, walletID int64) (string, error)
+	GetWalletBalanceAsOf(ctx context.Context, arg GetWalletBalanceAsOfParams) (string, error)
 	GetWalletCategoryByName(ctx context.Context, arg GetWalletCategoryByNameParams) (WalletCategory, error)
 	GetWalletForUser(ctx context.Context, arg GetWalletForUserParams) (Wallet, error)
 	ListAllPortfolios(ctx context.Context) ([]Portfolio, error)
@@ -40,6 +44,7 @@ type Querier interface {
 	ListDividends(ctx context.Context, arg ListDividendsParams) ([]ListDividendsRow, error)
 	ListHoldingsByPortfolio(ctx context.Context, portfolioID int64) ([]ListHoldingsByPortfolioRow, error)
 	ListNetWorthSnapshots(ctx context.Context, arg ListNetWorthSnapshotsParams) ([]ListNetWorthSnapshotsRow, error)
+	ListPortfolioFees(ctx context.Context, arg ListPortfolioFeesParams) ([]PortfolioFee, error)
 	ListPortfolioSnapshots(ctx context.Context, arg ListPortfolioSnapshotsParams) ([]PortfolioSnapshot, error)
 	ListPortfoliosByUser(ctx context.Context, userID int64) ([]Portfolio, error)
 	ListTransactions(ctx context.Context, arg ListTransactionsParams) ([]ListTransactionsRow, error)

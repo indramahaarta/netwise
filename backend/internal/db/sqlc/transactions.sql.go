@@ -199,9 +199,11 @@ func (q *Queries) SumFeesByPortfolio(ctx context.Context, portfolioID int64) (st
 }
 
 const sumRealizedGainByPortfolio = `-- name: SumRealizedGainByPortfolio :one
-SELECT COALESCE(SUM(realized_gain), 0)::NUMERIC AS total_realized_gain
-FROM transaction
-WHERE portfolio_id = $1 AND side = 'SELL'
+SELECT (
+    COALESCE((SELECT SUM(t.realized_gain) FROM transaction t WHERE t.portfolio_id = $1 AND t.side = 'SELL'), 0)
+    + COALESCE((SELECT SUM(d.amount) FROM dividend d WHERE d.portfolio_id = $1), 0)
+    - COALESCE((SELECT SUM(f.amount) FROM portfolio_fee f WHERE f.portfolio_id = $1), 0)
+)::NUMERIC AS total_realized_gain
 `
 
 func (q *Queries) SumRealizedGainByPortfolio(ctx context.Context, portfolioID int64) (string, error) {

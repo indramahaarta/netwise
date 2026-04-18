@@ -11,27 +11,18 @@ import (
 )
 
 func startSnapshotCron(queries *db.Queries, cfg *config.Config) {
-	// Backfill historical snapshots for missing dates (e.g., April 14-15 from outage)
-	// This is idempotent (UPSERT), so safe to run repeatedly.
-	log.Println("Checking for missing historical snapshots...")
-	backfillDates := []time.Time{
-		time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC),
-		time.Date(2026, 4, 15, 0, 0, 0, 0, time.UTC),
-	}
+	// Catch-up: only if yesterday has no snapshot yet.
+	// Prevents overwriting historical snapshots with wrong quantities
+	// (snapshotPortfolioForDate uses current holdings, not historical).
 	yesterday := time.Now().UTC().Truncate(24 * time.Hour).Add(-24 * time.Hour)
-	for _, d := range backfillDates {
-		if d.Before(yesterday) || d.Equal(yesterday) {
-			log.Printf("Backfilling snapshot for %s...", d.Format("2006-01-02"))
-			if err := service.RunSnapshotForDate(context.Background(), queries, cfg, d); err != nil {
-				log.Printf("Backfill error for %s: %v", d.Format("2006-01-02"), err)
-			}
+	log.Println("Running startup snapshot catch-up (yesterday)...")
+	count, err := queries.CountPortfolioSnapshotsForDate(context.Background(), yesterday)
+	if err != nil || count == 0 {
+		if err := service.RunSnapshotForDate(context.Background(), queries, cfg, yesterday); err != nil {
+			log.Printf("Startup snapshot error: %v", err)
 		}
-	}
-
-	// Catch-up: run a snapshot immediately on startup so today is never missing.
-	log.Println("Running startup snapshot catch-up...")
-	if err := service.RunDailySnapshot(context.Background(), queries, cfg); err != nil {
-		log.Printf("Startup snapshot error: %v", err)
+	} else {
+		log.Printf("Snapshot for %s already exists (%d rows), skipping catch-up.", yesterday.Format("2006-01-02"), count)
 	}
 
 	for {
