@@ -59,6 +59,20 @@ func (q *Queries) CreateWalletTransaction(ctx context.Context, arg CreateWalletT
 	return i, err
 }
 
+const deleteWalletTransaction = `-- name: DeleteWalletTransaction :exec
+DELETE FROM wallet_transaction WHERE id = $1 AND wallet_id = $2
+`
+
+type DeleteWalletTransactionParams struct {
+	ID       int64 `json:"id"`
+	WalletID int64 `json:"wallet_id"`
+}
+
+func (q *Queries) DeleteWalletTransaction(ctx context.Context, arg DeleteWalletTransactionParams) error {
+	_, err := q.db.ExecContext(ctx, deleteWalletTransaction, arg.ID, arg.WalletID)
+	return err
+}
+
 const getWalletBalance = `-- name: GetWalletBalance :one
 SELECT COALESCE(
     SUM(CASE
@@ -99,6 +113,138 @@ func (q *Queries) GetWalletBalanceAsOf(ctx context.Context, arg GetWalletBalance
 	var balance string
 	err := row.Scan(&balance)
 	return balance, err
+}
+
+const getWalletCategoryBreakdown = `-- name: GetWalletCategoryBreakdown :many
+SELECT
+    wc.id AS category_id,
+    wc.name AS category_name,
+    wc.type AS category_type,
+    COALESCE(SUM(wt.amount), 0)::NUMERIC AS total
+FROM wallet_transaction wt
+JOIN wallet_category wc ON wc.id = wt.category_id
+WHERE wt.wallet_id = $1
+  AND wt.transaction_time >= $2
+  AND wt.transaction_time < $3
+GROUP BY wc.id, wc.name, wc.type
+ORDER BY total DESC
+`
+
+type GetWalletCategoryBreakdownParams struct {
+	WalletID          int64     `json:"wallet_id"`
+	TransactionTime   time.Time `json:"transaction_time"`
+	TransactionTime_2 time.Time `json:"transaction_time_2"`
+}
+
+type GetWalletCategoryBreakdownRow struct {
+	CategoryID   int64  `json:"category_id"`
+	CategoryName string `json:"category_name"`
+	CategoryType string `json:"category_type"`
+	Total        string `json:"total"`
+}
+
+func (q *Queries) GetWalletCategoryBreakdown(ctx context.Context, arg GetWalletCategoryBreakdownParams) ([]GetWalletCategoryBreakdownRow, error) {
+	rows, err := q.db.QueryContext(ctx, getWalletCategoryBreakdown, arg.WalletID, arg.TransactionTime, arg.TransactionTime_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetWalletCategoryBreakdownRow{}
+	for rows.Next() {
+		var i GetWalletCategoryBreakdownRow
+		if err := rows.Scan(
+			&i.CategoryID,
+			&i.CategoryName,
+			&i.CategoryType,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getWalletSummary = `-- name: GetWalletSummary :one
+SELECT
+    COALESCE(SUM(CASE WHEN type IN ('INCOME','TRANSFER_IN','PORTFOLIO_WITHDRAWAL') THEN amount ELSE 0 END), 0)::NUMERIC AS total_income,
+    COALESCE(SUM(CASE WHEN type IN ('EXPENSE','TRANSFER_OUT','PORTFOLIO_DEPOSIT') THEN amount ELSE 0 END), 0)::NUMERIC AS total_expense
+FROM wallet_transaction
+WHERE wallet_id = $1
+  AND transaction_time >= $2
+  AND transaction_time < $3
+`
+
+type GetWalletSummaryParams struct {
+	WalletID          int64     `json:"wallet_id"`
+	TransactionTime   time.Time `json:"transaction_time"`
+	TransactionTime_2 time.Time `json:"transaction_time_2"`
+}
+
+type GetWalletSummaryRow struct {
+	TotalIncome  string `json:"total_income"`
+	TotalExpense string `json:"total_expense"`
+}
+
+func (q *Queries) GetWalletSummary(ctx context.Context, arg GetWalletSummaryParams) (GetWalletSummaryRow, error) {
+	row := q.db.QueryRowContext(ctx, getWalletSummary, arg.WalletID, arg.TransactionTime, arg.TransactionTime_2)
+	var i GetWalletSummaryRow
+	err := row.Scan(&i.TotalIncome, &i.TotalExpense)
+	return i, err
+}
+
+const getWalletTransaction = `-- name: GetWalletTransaction :one
+SELECT wt.id, wt.wallet_id, wt.type, wt.amount, wt.category_id, wt.related_wallet_id, wt.related_portfolio_id, wt.broker_rate, wt.note, wt.transaction_time, wc.name AS category_name, w2.name AS related_wallet_name
+FROM wallet_transaction wt
+LEFT JOIN wallet_category wc ON wc.id = wt.category_id
+LEFT JOIN wallet w2 ON w2.id = wt.related_wallet_id
+WHERE wt.id = $1 AND wt.wallet_id = $2
+`
+
+type GetWalletTransactionParams struct {
+	ID       int64 `json:"id"`
+	WalletID int64 `json:"wallet_id"`
+}
+
+type GetWalletTransactionRow struct {
+	ID                 int64          `json:"id"`
+	WalletID           int64          `json:"wallet_id"`
+	Type               string         `json:"type"`
+	Amount             string         `json:"amount"`
+	CategoryID         sql.NullInt64  `json:"category_id"`
+	RelatedWalletID    sql.NullInt64  `json:"related_wallet_id"`
+	RelatedPortfolioID sql.NullInt64  `json:"related_portfolio_id"`
+	BrokerRate         sql.NullString `json:"broker_rate"`
+	Note               sql.NullString `json:"note"`
+	TransactionTime    time.Time      `json:"transaction_time"`
+	CategoryName       sql.NullString `json:"category_name"`
+	RelatedWalletName  sql.NullString `json:"related_wallet_name"`
+}
+
+func (q *Queries) GetWalletTransaction(ctx context.Context, arg GetWalletTransactionParams) (GetWalletTransactionRow, error) {
+	row := q.db.QueryRowContext(ctx, getWalletTransaction, arg.ID, arg.WalletID)
+	var i GetWalletTransactionRow
+	err := row.Scan(
+		&i.ID,
+		&i.WalletID,
+		&i.Type,
+		&i.Amount,
+		&i.CategoryID,
+		&i.RelatedWalletID,
+		&i.RelatedPortfolioID,
+		&i.BrokerRate,
+		&i.Note,
+		&i.TransactionTime,
+		&i.CategoryName,
+		&i.RelatedWalletName,
+	)
+	return i, err
 }
 
 const listWalletTransactions = `-- name: ListWalletTransactions :many
@@ -169,4 +315,118 @@ func (q *Queries) ListWalletTransactions(ctx context.Context, arg ListWalletTran
 		return nil, err
 	}
 	return items, nil
+}
+
+const listWalletTransactionsByDateRange = `-- name: ListWalletTransactionsByDateRange :many
+SELECT
+    wt.id, wt.wallet_id, wt.type, wt.amount, wt.category_id, wt.related_wallet_id, wt.related_portfolio_id, wt.broker_rate, wt.note, wt.transaction_time,
+    wc.name AS category_name,
+    w2.name AS related_wallet_name
+FROM wallet_transaction wt
+LEFT JOIN wallet_category wc ON wc.id = wt.category_id
+LEFT JOIN wallet w2 ON w2.id = wt.related_wallet_id
+WHERE wt.wallet_id = $1
+  AND wt.transaction_time >= $2
+  AND wt.transaction_time < $3
+ORDER BY wt.transaction_time DESC
+`
+
+type ListWalletTransactionsByDateRangeParams struct {
+	WalletID          int64     `json:"wallet_id"`
+	TransactionTime   time.Time `json:"transaction_time"`
+	TransactionTime_2 time.Time `json:"transaction_time_2"`
+}
+
+type ListWalletTransactionsByDateRangeRow struct {
+	ID                 int64          `json:"id"`
+	WalletID           int64          `json:"wallet_id"`
+	Type               string         `json:"type"`
+	Amount             string         `json:"amount"`
+	CategoryID         sql.NullInt64  `json:"category_id"`
+	RelatedWalletID    sql.NullInt64  `json:"related_wallet_id"`
+	RelatedPortfolioID sql.NullInt64  `json:"related_portfolio_id"`
+	BrokerRate         sql.NullString `json:"broker_rate"`
+	Note               sql.NullString `json:"note"`
+	TransactionTime    time.Time      `json:"transaction_time"`
+	CategoryName       sql.NullString `json:"category_name"`
+	RelatedWalletName  sql.NullString `json:"related_wallet_name"`
+}
+
+func (q *Queries) ListWalletTransactionsByDateRange(ctx context.Context, arg ListWalletTransactionsByDateRangeParams) ([]ListWalletTransactionsByDateRangeRow, error) {
+	rows, err := q.db.QueryContext(ctx, listWalletTransactionsByDateRange, arg.WalletID, arg.TransactionTime, arg.TransactionTime_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWalletTransactionsByDateRangeRow{}
+	for rows.Next() {
+		var i ListWalletTransactionsByDateRangeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WalletID,
+			&i.Type,
+			&i.Amount,
+			&i.CategoryID,
+			&i.RelatedWalletID,
+			&i.RelatedPortfolioID,
+			&i.BrokerRate,
+			&i.Note,
+			&i.TransactionTime,
+			&i.CategoryName,
+			&i.RelatedWalletName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateWalletTransaction = `-- name: UpdateWalletTransaction :one
+UPDATE wallet_transaction
+SET type = $3, amount = $4, category_id = $5, note = $6, transaction_time = $7
+WHERE id = $1 AND wallet_id = $2
+RETURNING id, wallet_id, type, amount, category_id, related_wallet_id, related_portfolio_id, broker_rate, note, transaction_time
+`
+
+type UpdateWalletTransactionParams struct {
+	ID              int64          `json:"id"`
+	WalletID        int64          `json:"wallet_id"`
+	Type            string         `json:"type"`
+	Amount          string         `json:"amount"`
+	CategoryID      sql.NullInt64  `json:"category_id"`
+	Note            sql.NullString `json:"note"`
+	TransactionTime time.Time      `json:"transaction_time"`
+}
+
+func (q *Queries) UpdateWalletTransaction(ctx context.Context, arg UpdateWalletTransactionParams) (WalletTransaction, error) {
+	row := q.db.QueryRowContext(ctx, updateWalletTransaction,
+		arg.ID,
+		arg.WalletID,
+		arg.Type,
+		arg.Amount,
+		arg.CategoryID,
+		arg.Note,
+		arg.TransactionTime,
+	)
+	var i WalletTransaction
+	err := row.Scan(
+		&i.ID,
+		&i.WalletID,
+		&i.Type,
+		&i.Amount,
+		&i.CategoryID,
+		&i.RelatedWalletID,
+		&i.RelatedPortfolioID,
+		&i.BrokerRate,
+		&i.Note,
+		&i.TransactionTime,
+	)
+	return i, err
 }

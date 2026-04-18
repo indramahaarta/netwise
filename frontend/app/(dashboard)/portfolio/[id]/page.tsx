@@ -59,6 +59,24 @@ function formatDate(dateStr: string) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+function formatCompact(v: number, curr: string): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: curr === 'IDR' ? 'IDR' : 'USD',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(v)
+}
+
+function formatFull(v: number, curr: string): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: curr === 'IDR' ? 'IDR' : 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(v)
+}
+
 export default function PortfolioPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const { data: portfolio, isLoading: pLoading } = usePortfolio(id)
@@ -296,8 +314,14 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
               <LineChart data={chartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} width={70} domain={['dataMin', 'dataMax']} />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  width={80}
+                  domain={['dataMin', 'dataMax']}
+                  tickFormatter={(v) => formatCompact(v, portfolio.currency)}
+                />
                 <Tooltip
+                  formatter={(v, name) => [formatFull(Number(v), portfolio.currency), name]}
                   contentStyle={{
                     background: 'hsl(var(--popover))',
                     border: '1px solid hsl(var(--border))',

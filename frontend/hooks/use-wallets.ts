@@ -178,3 +178,80 @@ export function useCreateWalletCategory() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['wallet-categories'] }),
   })
 }
+
+export function useDeleteWalletCategory() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) =>
+      api.delete(`/api/v1/wallet-categories/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wallet-categories'] }),
+  })
+}
+
+export function useUpdateWalletTransaction(walletId: string | number, txId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: {
+      type: 'INCOME' | 'EXPENSE'
+      amount: number
+      category_id: number
+      note?: string
+      transaction_time: string
+    }) =>
+      api.put(`/api/v1/wallets/${walletId}/transactions/${txId}`, data).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wallet-transactions', walletId] })
+      qc.invalidateQueries({ queryKey: ['wallets', walletId] })
+      qc.invalidateQueries({ queryKey: ['networth'] })
+    },
+  })
+}
+
+export function useDeleteWalletTransaction(walletId: string | number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (txId: number) =>
+      api.delete(`/api/v1/wallets/${walletId}/transactions/${txId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wallet-transactions', walletId] })
+      qc.invalidateQueries({ queryKey: ['wallets', walletId] })
+      qc.invalidateQueries({ queryKey: ['networth'] })
+    },
+  })
+}
+
+export function useWalletSummary(id: string | number, from: string, to: string) {
+  return useQuery<any>({
+    queryKey: ['wallet-summary', id, from, to],
+    queryFn: () =>
+      api.get(`/api/v1/wallets/${id}/summary`, { params: { from, to } }).then((r) => r.data),
+    enabled: !!id && !!from && !!to,
+  })
+}
+
+export function useWalletCategoryBreakdown(id: string | number, from: string, to: string) {
+  return useQuery<any[]>({
+    queryKey: ['wallet-category-breakdown', id, from, to],
+    queryFn: () =>
+      api.get(`/api/v1/wallets/${id}/summary/categories`, { params: { from, to } }).then((r) => r.data),
+    enabled: !!id && !!from && !!to,
+  })
+}
+
+export function useWalletSnapshots(id: string | number, from: string, to: string) {
+  return useQuery<any[]>({
+    queryKey: ['wallet-snapshots', id, from, to],
+    queryFn: () =>
+      api.get(`/api/v1/wallets/${id}/snapshots`, { params: { from, to } }).then((r) => r.data),
+    enabled: !!id && !!from && !!to,
+  })
+}
+
+export function useWalletTransactionsByDateRange(id: string | number, from?: string, to?: string) {
+  return useQuery<any[]>({
+    queryKey: ['wallet-transactions-range', id, from, to],
+    queryFn: () =>
+      api.get(`/api/v1/wallets/${id}/transactions`, { params: { from, to } }).then((r) => r.data),
+    enabled: !!id,
+  })
+}

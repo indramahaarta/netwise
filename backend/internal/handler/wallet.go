@@ -2,6 +2,7 @@ package handler
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -144,10 +145,11 @@ func (h *Handler) DeleteWallet(c *gin.Context) {
 // --- Transactions ---
 
 type addTransactionRequest struct {
-	Type       string  `json:"type" binding:"required,oneof=INCOME EXPENSE"`
-	Amount     float64 `json:"amount" binding:"required,gt=0"`
-	CategoryID int64   `json:"category_id" binding:"required"`
-	Note       string  `json:"note"`
+	Type            string  `json:"type" binding:"required,oneof=INCOME EXPENSE"`
+	Amount          float64 `json:"amount" binding:"required,gt=0"`
+	CategoryID      int64   `json:"category_id" binding:"required"`
+	Note            string  `json:"note"`
+	TransactionTime *string `json:"transaction_time"` // ISO 8601, optional
 }
 
 // SetInitialBalance creates an INCOME transaction with the "Initial Balance" system category.
@@ -304,6 +306,15 @@ func (h *Handler) AddWalletTransaction(c *gin.Context) {
 		note = sql.NullString{String: req.Note, Valid: true}
 	}
 
+	txTime := time.Now()
+	if req.TransactionTime != nil {
+		if t, err := time.Parse(time.RFC3339, *req.TransactionTime); err == nil {
+			txTime = t
+		} else if t, err := time.Parse("2006-01-02", *req.TransactionTime); err == nil {
+			txTime = t
+		}
+	}
+
 	tx, err := h.queries.CreateWalletTransaction(c, db.CreateWalletTransactionParams{
 		WalletID:           walletID,
 		Type:               req.Type,
@@ -313,7 +324,7 @@ func (h *Handler) AddWalletTransaction(c *gin.Context) {
 		RelatedPortfolioID: sql.NullInt64{},
 		BrokerRate:         sql.NullString{},
 		Note:               note,
-		TransactionTime:    time.Now(),
+		TransactionTime:    txTime,
 	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to add transaction")
@@ -587,6 +598,207 @@ func (h *Handler) PortfolioToWallet(c *gin.Context) {
 	})
 }
 
+// --- Update/Delete Transactions ---
+
+type updateTransactionRequest struct {
+	Type            string  `json:"type" binding:"required,oneof=INCOME EXPENSE"`
+	Amount          float64 `json:"amount" binding:"required,gt=0"`
+	CategoryID      int64   `json:"category_id" binding:"required"`
+	Note            string  `json:"note"`
+	TransactionTime string  `json:"transaction_time" binding:"required"` // ISO 8601
+}
+
+func (h *Handler) UpdateWalletTransaction(c *gin.Context) {
+	walletID := getWalletID(c)
+	txID := paramInt64(c, "txId")
+
+	var req updateTransactionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Parse transaction time
+	txTime, err := time.Parse(time.RFC3339, req.TransactionTime)
+	if err != nil {
+		if txTime, err = time.Parse("2006-01-02", req.TransactionTime); err != nil {
+			respondError(c, http.StatusBadRequest, "invalid transaction_time format")
+			return
+		}
+	}
+
+	amt := decimal.NewFromFloat(req.Amount)
+
+	note := sql.NullString{}
+	if req.Note != "" {
+		note = sql.NullString{String: req.Note, Valid: true}
+	}
+
+	tx, err := h.queries.UpdateWalletTransaction(c, db.UpdateWalletTransactionParams{
+		ID:              txID,
+		WalletID:        walletID,
+		Type:            req.Type,
+		Amount:          amt.StringFixed(8),
+		CategoryID:      sql.NullInt64{Int64: req.CategoryID, Valid: true},
+		Note:            note,
+		TransactionTime: txTime,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to update transaction")
+		return
+	}
+
+	c.JSON(http.StatusOK, tx)
+}
+
+func (h *Handler) DeleteWalletTransaction(c *gin.Context) {
+	walletID := getWalletID(c)
+	txID := paramInt64(c, "txId")
+
+	if err := h.queries.DeleteWalletTransaction(c, db.DeleteWalletTransactionParams{
+		ID:       txID,
+		WalletID: walletID,
+	}); err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to delete transaction")
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// --- Wallet Summary & Charts ---
+
+func (h *Handler) GetWalletSummary(c *gin.Context) {
+	walletID := getWalletID(c)
+
+	from := c.Query("from")
+	to := c.Query("to")
+
+	if from == "" || to == "" {
+		respondError(c, http.StatusBadRequest, "from and to query parameters required")
+		return
+	}
+
+	fromTime, err := parseDate(from)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid from date")
+		return
+	}
+
+	toTime, err := parseDate(to)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid to date")
+		return
+	}
+
+	summary, err := h.queries.GetWalletSummary(c, db.GetWalletSummaryParams{
+		WalletID:        walletID,
+		TransactionTime: fromTime,
+		TransactionTime_2: toTime,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to get summary")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"income":  summary.TotalIncome,
+		"expense": summary.TotalExpense,
+		"net":     decimalFromString(summary.TotalIncome).Sub(decimalFromString(summary.TotalExpense)).StringFixed(2),
+		"from":    from,
+		"to":      to,
+	})
+}
+
+func (h *Handler) GetWalletCategoryBreakdown(c *gin.Context) {
+	walletID := getWalletID(c)
+
+	from := c.Query("from")
+	to := c.Query("to")
+
+	if from == "" || to == "" {
+		respondError(c, http.StatusBadRequest, "from and to query parameters required")
+		return
+	}
+
+	fromTime, err := parseDate(from)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid from date")
+		return
+	}
+
+	toTime, err := parseDate(to)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid to date")
+		return
+	}
+
+	breakdown, err := h.queries.GetWalletCategoryBreakdown(c, db.GetWalletCategoryBreakdownParams{
+		WalletID:          walletID,
+		TransactionTime:   fromTime,
+		TransactionTime_2: toTime,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to get category breakdown")
+		return
+	}
+
+	type breakdownResponse struct {
+		CategoryID   int64  `json:"category_id"`
+		CategoryName string `json:"category_name"`
+		CategoryType string `json:"category_type"`
+		Total        string `json:"total"`
+	}
+
+	result := make([]breakdownResponse, len(breakdown))
+	for i, b := range breakdown {
+		result[i] = breakdownResponse{
+			CategoryID:   b.CategoryID,
+			CategoryName: b.CategoryName,
+			CategoryType: b.CategoryType,
+			Total:        b.Total,
+		}
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) ListWalletSnapshots(c *gin.Context) {
+	walletID := getWalletID(c)
+
+	from := c.Query("from")
+	to := c.Query("to")
+
+	if from == "" || to == "" {
+		respondError(c, http.StatusBadRequest, "from and to query parameters required")
+		return
+	}
+
+	fromTime, err := parseDate(from)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid from date")
+		return
+	}
+
+	toTime, err := parseDate(to)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid to date")
+		return
+	}
+
+	snapshots, err := h.queries.ListWalletSnapshots(c, db.ListWalletSnapshotsParams{
+		WalletID:       walletID,
+		SnapshotDate:   fromTime,
+		SnapshotDate_2: toTime,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to list snapshots")
+		return
+	}
+
+	c.JSON(http.StatusOK, snapshots)
+}
+
 // --- Categories ---
 
 type walletCategoryResponse struct {
@@ -648,3 +860,49 @@ func (h *Handler) CreateWalletCategory(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, cat)
 }
+
+func (h *Handler) DeleteWalletCategory(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	catID := paramInt64(c, "id")
+
+	// Fetch the category to verify it's not a system category
+	cat, err := h.queries.GetWalletCategory(c, catID)
+	if err != nil {
+		respondNotFound(c, "category")
+		return
+	}
+
+	if cat.IsSystem {
+		respondError(c, http.StatusBadRequest, "cannot delete system category")
+		return
+	}
+
+	if !cat.UserID.Valid || cat.UserID.Int64 != userID {
+		respondError(c, http.StatusForbidden, "user does not own this category")
+		return
+	}
+
+	if err := h.queries.DeleteWalletCategory(c, db.DeleteWalletCategoryParams{
+		ID:     catID,
+		UserID: sql.NullInt64{Int64: userID, Valid: true},
+	}); err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to delete category")
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// parseDate helper for "from" and "to" query parameters
+func parseDate(dateStr string) (time.Time, error) {
+	// Try RFC3339 first
+	if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
+		return t, nil
+	}
+	// Try YYYY-MM-DD format
+	if t, err := time.Parse("2006-01-02", dateStr); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("invalid date format")
+}
+

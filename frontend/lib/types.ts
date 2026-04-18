@@ -179,3 +179,18 @@ export interface StockSearchResult {
   type: string
   displaySymbol: string
 }
+
+export interface WalletSummary {
+  income: string
+  expense: string
+  net: string
+  from: string
+  to: string
+}
+
+export interface WalletCategoryBreakdown {
+  category_id: number
+  category_name: string
+  category_type: 'INCOME' | 'EXPENSE'
+  total: string
+}

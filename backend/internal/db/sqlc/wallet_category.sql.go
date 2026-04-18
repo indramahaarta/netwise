@@ -35,6 +35,37 @@ func (q *Queries) CreateWalletCategory(ctx context.Context, arg CreateWalletCate
 	return i, err
 }
 
+const deleteWalletCategory = `-- name: DeleteWalletCategory :exec
+DELETE FROM wallet_category WHERE id = $1 AND user_id = $2
+`
+
+type DeleteWalletCategoryParams struct {
+	ID     int64         `json:"id"`
+	UserID sql.NullInt64 `json:"user_id"`
+}
+
+func (q *Queries) DeleteWalletCategory(ctx context.Context, arg DeleteWalletCategoryParams) error {
+	_, err := q.db.ExecContext(ctx, deleteWalletCategory, arg.ID, arg.UserID)
+	return err
+}
+
+const getWalletCategory = `-- name: GetWalletCategory :one
+SELECT id, user_id, name, type, is_system FROM wallet_category WHERE id = $1
+`
+
+func (q *Queries) GetWalletCategory(ctx context.Context, id int64) (WalletCategory, error) {
+	row := q.db.QueryRowContext(ctx, getWalletCategory, id)
+	var i WalletCategory
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.Type,
+		&i.IsSystem,
+	)
+	return i, err
+}
+
 const getWalletCategoryByName = `-- name: GetWalletCategoryByName :one
 SELECT id, user_id, name, type, is_system FROM wallet_category
 WHERE name = $1 AND (user_id IS NULL OR user_id = $2)
