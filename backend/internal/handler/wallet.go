@@ -968,3 +968,73 @@ func (h *Handler) GetAggregatedWalletSnapshots(c *gin.Context) {
 
 	c.JSON(http.StatusOK, rows)
 }
+
+func (h *Handler) GetAggregatedWalletSummary(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	if startDate == "" || endDate == "" {
+		respondError(c, http.StatusBadRequest, "start_date and end_date are required")
+		return
+	}
+
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid start_date format, use YYYY-MM-DD")
+		return
+	}
+
+	end, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid end_date format, use YYYY-MM-DD")
+		return
+	}
+
+	row, err := h.queries.GetAggregatedWalletSummary(c, db.GetAggregatedWalletSummaryParams{
+		UserID: userID,
+		TransactionTime: start,
+		TransactionTime_2: end,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to load summary")
+		return
+	}
+
+	c.JSON(http.StatusOK, row)
+}
+
+func (h *Handler) GetAggregatedWalletCategories(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	if startDate == "" || endDate == "" {
+		respondError(c, http.StatusBadRequest, "start_date and end_date are required")
+		return
+	}
+
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid start_date format, use YYYY-MM-DD")
+		return
+	}
+
+	end, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid end_date format, use YYYY-MM-DD")
+		return
+	}
+
+	rows, err := h.queries.GetAggregatedWalletCategoryBreakdown(c, db.GetAggregatedWalletCategoryBreakdownParams{
+		UserID: userID,
+		TransactionTime: start,
+		TransactionTime_2: end,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to load categories")
+		return
+	}
+
+	c.JSON(http.StatusOK, rows)
+}

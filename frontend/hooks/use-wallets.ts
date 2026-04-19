@@ -265,3 +265,23 @@ export function useAggregatedWalletSnapshots(range: string) {
     staleTime: 60 * 60 * 1000, // 1 hour — matches backend cache TTL
   })
 }
+
+export function useAggregatedWalletSummary(startDate: string, endDate: string) {
+  return useQuery<{ total_income: string; total_expense: string }>({
+    queryKey: ['wallet-summary-aggregate', startDate, endDate],
+    queryFn: () =>
+      api.get('/api/v1/wallets/summary', { params: { start_date: startDate, end_date: endDate } })
+        .then((r) => r.data),
+    enabled: !!startDate && !!endDate,
+  })
+}
+
+export function useAggregatedWalletCategories(startDate: string, endDate: string) {
+  return useQuery<any[]>({
+    queryKey: ['wallet-categories-aggregate', startDate, endDate],
+    queryFn: () =>
+      api.get('/api/v1/wallets/categories', { params: { start_date: startDate, end_date: endDate } })
+        .then((r) => r.data),
+    enabled: !!startDate && !!endDate,
+  })
+}

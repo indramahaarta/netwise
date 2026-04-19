@@ -73,6 +73,94 @@ func (q *Queries) DeleteWalletTransaction(ctx context.Context, arg DeleteWalletT
 	return err
 }
 
+const getAggregatedWalletCategoryBreakdown = `-- name: GetAggregatedWalletCategoryBreakdown :many
+SELECT
+    wc.id AS category_id,
+    wc.name AS category_name,
+    wc.type AS category_type,
+    COALESCE(SUM(wt.amount), 0)::text AS total
+FROM wallet_transaction wt
+JOIN wallet_category wc ON wc.id = wt.category_id
+JOIN wallet w ON w.id = wt.wallet_id
+WHERE w.user_id = $1
+  AND wt.transaction_time >= $2
+  AND wt.transaction_time < $3
+  AND wt.type IN ('INCOME', 'EXPENSE')
+GROUP BY wc.id, wc.name, wc.type
+ORDER BY total DESC
+LIMIT 5
+`
+
+type GetAggregatedWalletCategoryBreakdownParams struct {
+	UserID            int64     `json:"user_id"`
+	TransactionTime   time.Time `json:"transaction_time"`
+	TransactionTime_2 time.Time `json:"transaction_time_2"`
+}
+
+type GetAggregatedWalletCategoryBreakdownRow struct {
+	CategoryID   int64  `json:"category_id"`
+	CategoryName string `json:"category_name"`
+	CategoryType string `json:"category_type"`
+	Total        string `json:"total"`
+}
+
+func (q *Queries) GetAggregatedWalletCategoryBreakdown(ctx context.Context, arg GetAggregatedWalletCategoryBreakdownParams) ([]GetAggregatedWalletCategoryBreakdownRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAggregatedWalletCategoryBreakdown, arg.UserID, arg.TransactionTime, arg.TransactionTime_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetAggregatedWalletCategoryBreakdownRow{}
+	for rows.Next() {
+		var i GetAggregatedWalletCategoryBreakdownRow
+		if err := rows.Scan(
+			&i.CategoryID,
+			&i.CategoryName,
+			&i.CategoryType,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAggregatedWalletSummary = `-- name: GetAggregatedWalletSummary :one
+SELECT
+    COALESCE(SUM(CASE WHEN wt.type IN ('INCOME','TRANSFER_IN','PORTFOLIO_WITHDRAWAL') THEN wt.amount ELSE 0 END), 0)::text AS total_income,
+    COALESCE(SUM(CASE WHEN wt.type IN ('EXPENSE','TRANSFER_OUT','PORTFOLIO_DEPOSIT') THEN wt.amount ELSE 0 END), 0)::text AS total_expense
+FROM wallet_transaction wt
+JOIN wallet w ON w.id = wt.wallet_id
+WHERE w.user_id = $1
+  AND wt.transaction_time >= $2
+  AND wt.transaction_time < $3
+`
+
+type GetAggregatedWalletSummaryParams struct {
+	UserID            int64     `json:"user_id"`
+	TransactionTime   time.Time `json:"transaction_time"`
+	TransactionTime_2 time.Time `json:"transaction_time_2"`
+}
+
+type GetAggregatedWalletSummaryRow struct {
+	TotalIncome  string `json:"total_income"`
+	TotalExpense string `json:"total_expense"`
+}
+
+func (q *Queries) GetAggregatedWalletSummary(ctx context.Context, arg GetAggregatedWalletSummaryParams) (GetAggregatedWalletSummaryRow, error) {
+	row := q.db.QueryRowContext(ctx, getAggregatedWalletSummary, arg.UserID, arg.TransactionTime, arg.TransactionTime_2)
+	var i GetAggregatedWalletSummaryRow
+	err := row.Scan(&i.TotalIncome, &i.TotalExpense)
+	return i, err
+}
+
 const getWalletBalance = `-- name: GetWalletBalance :one
 SELECT COALESCE(
     SUM(CASE

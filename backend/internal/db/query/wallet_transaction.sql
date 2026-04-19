@@ -89,3 +89,30 @@ WHERE wt.wallet_id = $1
   AND wt.transaction_time >= $2
   AND wt.transaction_time < $3
 ORDER BY wt.transaction_time DESC;
+
+-- name: GetAggregatedWalletSummary :one
+SELECT
+    COALESCE(SUM(CASE WHEN wt.type IN ('INCOME','TRANSFER_IN','PORTFOLIO_WITHDRAWAL') THEN wt.amount ELSE 0 END), 0)::text AS total_income,
+    COALESCE(SUM(CASE WHEN wt.type IN ('EXPENSE','TRANSFER_OUT','PORTFOLIO_DEPOSIT') THEN wt.amount ELSE 0 END), 0)::text AS total_expense
+FROM wallet_transaction wt
+JOIN wallet w ON w.id = wt.wallet_id
+WHERE w.user_id = $1
+  AND wt.transaction_time >= $2
+  AND wt.transaction_time < $3;
+
+-- name: GetAggregatedWalletCategoryBreakdown :many
+SELECT
+    wc.id AS category_id,
+    wc.name AS category_name,
+    wc.type AS category_type,
+    COALESCE(SUM(wt.amount), 0)::text AS total
+FROM wallet_transaction wt
+JOIN wallet_category wc ON wc.id = wt.category_id
+JOIN wallet w ON w.id = wt.wallet_id
+WHERE w.user_id = $1
+  AND wt.transaction_time >= $2
+  AND wt.transaction_time < $3
+  AND wt.type IN ('INCOME', 'EXPENSE')
+GROUP BY wc.id, wc.name, wc.type
+ORDER BY total DESC
+LIMIT 5;
