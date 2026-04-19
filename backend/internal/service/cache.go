@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -78,3 +79,55 @@ func GetCachedForex(pair string) (float64, bool) { return forexCache.get(pair) }
 
 // SetCachedForex stores a forex rate for the pair with a 1-hour TTL.
 func SetCachedForex(pair string, rate float64) { forexCache.set(pair, rate) }
+
+// --- wallet snapshot store ---
+
+type wsEntry struct {
+	data      []byte
+	expiresAt time.Time
+}
+
+type wsStore struct {
+	mu    sync.RWMutex
+	items map[string]wsEntry
+}
+
+func (w *wsStore) get(key string) ([]byte, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	e, ok := w.items[key]
+	if !ok || time.Now().After(e.expiresAt) {
+		return nil, false
+	}
+	return e.data, true
+}
+
+func (w *wsStore) set(key string, data []byte) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.items[key] = wsEntry{data: data, expiresAt: time.Now().Add(time.Hour)}
+}
+
+func (w *wsStore) invalidatePrefix(prefix string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for key := range w.items {
+		if len(key) > len(prefix) && key[:len(prefix)] == prefix {
+			delete(w.items, key)
+		}
+	}
+}
+
+var walletSnapshotsCache = &wsStore{items: make(map[string]wsEntry)}
+
+// GetCachedWalletSnapshots returns cached wallet snapshots JSON if available and not expired.
+func GetCachedWalletSnapshots(key string) ([]byte, bool) { return walletSnapshotsCache.get(key) }
+
+// SetCachedWalletSnapshots stores wallet snapshots JSON with a 1-hour TTL.
+func SetCachedWalletSnapshots(key string, data []byte) { walletSnapshotsCache.set(key, data) }
+
+// InvalidateUserWalletSnapshots removes all cached wallet snapshots for a user across all ranges.
+func InvalidateUserWalletSnapshots(userID int64) {
+	prefix := fmt.Sprintf("%d:", userID)
+	walletSnapshotsCache.invalidatePrefix(prefix)
+}

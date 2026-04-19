@@ -26,6 +26,7 @@ type Querier interface {
 	DeleteWallet(ctx context.Context, arg DeleteWalletParams) error
 	DeleteWalletCategory(ctx context.Context, arg DeleteWalletCategoryParams) error
 	DeleteWalletTransaction(ctx context.Context, arg DeleteWalletTransactionParams) error
+	GetAggregatedWalletSnapshots(ctx context.Context, arg GetAggregatedWalletSnapshotsParams) ([]GetAggregatedWalletSnapshotsRow, error)
 	GetHolding(ctx context.Context, arg GetHoldingParams) (Holding, error)
 	GetOrCreateTicker(ctx context.Context, arg GetOrCreateTickerParams) (Ticker, error)
 	GetPortfolio(ctx context.Context, id int64) (Portfolio, error)

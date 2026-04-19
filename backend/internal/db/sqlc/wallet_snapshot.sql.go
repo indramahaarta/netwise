@@ -10,6 +10,53 @@ import (
 	"time"
 )
 
+const getAggregatedWalletSnapshots = `-- name: GetAggregatedWalletSnapshots :many
+SELECT
+    ws.snapshot_date,
+    SUM(ws.balance::numeric)::text AS total_balance
+FROM wallet_snapshot ws
+JOIN wallet w ON w.id = ws.wallet_id
+WHERE w.user_id = $1
+  AND ws.snapshot_date >= $2
+  AND ws.snapshot_date <= $3
+GROUP BY ws.snapshot_date
+ORDER BY ws.snapshot_date ASC
+`
+
+type GetAggregatedWalletSnapshotsParams struct {
+	UserID         int64     `json:"user_id"`
+	SnapshotDate   time.Time `json:"snapshot_date"`
+	SnapshotDate_2 time.Time `json:"snapshot_date_2"`
+}
+
+type GetAggregatedWalletSnapshotsRow struct {
+	SnapshotDate time.Time `json:"snapshot_date"`
+	TotalBalance string    `json:"total_balance"`
+}
+
+func (q *Queries) GetAggregatedWalletSnapshots(ctx context.Context, arg GetAggregatedWalletSnapshotsParams) ([]GetAggregatedWalletSnapshotsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAggregatedWalletSnapshots, arg.UserID, arg.SnapshotDate, arg.SnapshotDate_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetAggregatedWalletSnapshotsRow{}
+	for rows.Next() {
+		var i GetAggregatedWalletSnapshotsRow
+		if err := rows.Scan(&i.SnapshotDate, &i.TotalBalance); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWalletSnapshots = `-- name: ListWalletSnapshots :many
 SELECT id, wallet_id, balance, balance_usd, snapshot_date FROM wallet_snapshot
 WHERE wallet_id = $1

@@ -229,6 +229,13 @@ func (h *Handler) GetPortfolioSnapshots(c *gin.Context) {
 		})
 	}
 
+	// Apply downsampling
+	bucketType := rangeToBucketType(rangeParam)
+	responses = DownsampleSnapshots(responses, func(r portfolioSnapshotResponse) time.Time {
+		t, _ := time.Parse("2006-01-02", r.SnapshotDate)
+		return t
+	}, bucketType)
+
 	c.JSON(http.StatusOK, responses)
 }
 

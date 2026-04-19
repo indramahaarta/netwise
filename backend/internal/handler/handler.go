@@ -55,6 +55,7 @@ func RegisterProtectedRoutes(r *gin.RouterGroup, queries *db.Queries, cfg *confi
 		wallets.GET("", h.ListWallets)
 		wallets.POST("", h.CreateWallet)
 		wallets.POST("/transfer", h.TransferBetweenWallets)
+		wallets.GET("/snapshots", h.GetAggregatedWalletSnapshots)
 		w := wallets.Group("/:id")
 		w.Use(h.walletOwnerMiddleware())
 		{

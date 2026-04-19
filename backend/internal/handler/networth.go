@@ -316,5 +316,11 @@ func (h *Handler) GetNetWorthSnapshots(c *gin.Context) {
 		return
 	}
 
+	// Apply downsampling
+	bucketType := rangeToBucketType(rangeParam)
+	rows = DownsampleSnapshots(rows, func(r db.ListNetWorthSnapshotsRow) time.Time {
+		return r.SnapshotDate
+	}, bucketType)
+
 	c.JSON(http.StatusOK, rows)
 }

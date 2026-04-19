@@ -255,3 +255,13 @@ export function useWalletTransactionsByDateRange(id: string | number, from?: str
     enabled: !!id,
   })
 }
+
+export function useAggregatedWalletSnapshots(range: string) {
+  return useQuery<{ snapshot_date: string; total_balance: string }[]>({
+    queryKey: ['wallet-snapshots-aggregate', range],
+    queryFn: () =>
+      api.get('/api/v1/wallets/snapshots', { params: { range } }).then((r) => r.data),
+    enabled: !!range,
+    staleTime: 60 * 60 * 1000, // 1 hour — matches backend cache TTL
+  })
+}

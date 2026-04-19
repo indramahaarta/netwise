@@ -13,7 +13,6 @@ import {
   useDeleteWalletTransaction,
   useWalletSummary,
   useWalletCategoryBreakdown,
-  useWalletSnapshots,
   useWalletTransactionsByDateRange,
   useTransferWallets,
   useWalletToPortfolio,
@@ -30,7 +29,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, Cell
 } from 'recharts'
 import { ArrowLeft, TrendingUp, TrendingDown, ArrowLeftRight, Building2, Wallet, Plus, ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from 'lucide-react'
@@ -152,17 +151,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
   // Get category breakdown for the selected period
   const { data: categoryBreakdown } = useWalletCategoryBreakdown(id, summaryFrom, summaryTo)
 
-  // Get snapshots for the month
-  const { data: snapshots } = useWalletSnapshots(id, fromDate, toDate)
-
-  // Chart data for balance over time
-  const chartData = useMemo(() => {
-    if (!snapshots) return []
-    return snapshots.map((s: any) => ({
-      date: format(new Date(s.snapshot_date), 'MMM d'),
-      balance: parseFloat(s.balance),
-    }))
-  }, [snapshots])
 
   // Income vs Expense chart data
   const incomeExpenseData = useMemo(() => {
@@ -582,26 +570,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
 
       {/* Charts */}
       <div className="space-y-4">
-        {/* Balance over time */}
-        {chartData.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Balance Over Time</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: any) => fmtIDRCompact(v)} />
-                  <Tooltip formatter={(v: any) => fmtIDR(v, 2)} />
-                  <Line type="monotone" dataKey="balance" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        )}
-
         {/* Income vs Expense */}
         {incomeExpenseData.length > 0 && (
           <Card>

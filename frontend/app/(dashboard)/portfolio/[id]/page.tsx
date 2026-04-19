@@ -115,31 +115,22 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
       }
     })
 
-    // Append today's live point if it's not already in snapshots
-    if (holdings && portfolio && points.length > 0) {
-      const lastSnapshot = new Date(snapshots?.[snapshots.length - 1]?.snapshot_date || '')
-      const today = new Date()
-      const isTodayIncluded =
-        lastSnapshot.getUTCFullYear() === today.getFullYear() &&
-        lastSnapshot.getUTCMonth() === today.getMonth() &&
-        lastSnapshot.getUTCDate() === today.getDate()
-
-      if (!isTodayIncluded) {
-        const equity = holdings.reduce((s, h) => s + parseFloat(h.equity), 0)
-        const invested = holdings.reduce((s, h) => s + parseFloat(h.invested), 0)
-        const cash = parseFloat(portfolio.cash)
-        const unrealized = equity - invested
-        const realized = realizedData?.realized_pnl ? parseFloat(realizedData.realized_pnl) : 0
-        points.push({
-          date: 'Today',
-          netWorth: equity + cash,
-          equity,
-          invested,
-          cash,
-          unrealized,
-          realized,
-        })
-      }
+    // Always append today's live point (with current prices)
+    if (holdings && portfolio) {
+      const equity = holdings.reduce((s, h) => s + parseFloat(h.equity), 0)
+      const invested = holdings.reduce((s, h) => s + parseFloat(h.invested), 0)
+      const cash = parseFloat(portfolio.cash)
+      const unrealized = equity - invested
+      const realized = realizedData?.realized_pnl ? parseFloat(realizedData.realized_pnl) : 0
+      points.push({
+        date: 'Today',
+        netWorth: equity + cash,
+        equity,
+        invested,
+        cash,
+        unrealized,
+        realized,
+      })
     }
 
     return points

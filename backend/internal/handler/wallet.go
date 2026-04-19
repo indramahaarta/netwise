@@ -2,6 +2,7 @@ package handler
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -11,6 +12,7 @@ import (
 
 	db "github.com/indramahaarta/netwise/internal/db/sqlc"
 	"github.com/indramahaarta/netwise/internal/middleware"
+	"github.com/indramahaarta/netwise/internal/service"
 )
 
 // walletOwnerMiddleware verifies the wallet belongs to the requesting user.
@@ -191,6 +193,7 @@ func (h *Handler) SetInitialBalance(c *gin.Context) {
 		return
 	}
 
+	service.InvalidateUserWalletSnapshots(userID)
 	c.JSON(http.StatusCreated, tx)
 }
 
@@ -331,6 +334,7 @@ func (h *Handler) AddWalletTransaction(c *gin.Context) {
 		return
 	}
 
+	service.InvalidateUserWalletSnapshots(middleware.GetUserID(c))
 	c.JSON(http.StatusCreated, tx)
 }
 
@@ -418,6 +422,7 @@ func (h *Handler) TransferBetweenWallets(c *gin.Context) {
 		return
 	}
 
+	service.InvalidateUserWalletSnapshots(userID)
 	c.JSON(http.StatusCreated, gin.H{"transfer_out": out, "amount": amt.StringFixed(8)})
 }
 
@@ -505,6 +510,7 @@ func (h *Handler) WalletToPortfolio(c *gin.Context) {
 		return
 	}
 
+	service.InvalidateUserWalletSnapshots(userID)
 	c.JSON(http.StatusCreated, gin.H{
 		"cash_flow":    cf,
 		"cash_balance": newCash.StringFixed(2),
@@ -592,6 +598,7 @@ func (h *Handler) PortfolioToWallet(c *gin.Context) {
 		return
 	}
 
+	service.InvalidateUserWalletSnapshots(userID)
 	c.JSON(http.StatusCreated, gin.H{
 		"cash_flow":    cf,
 		"cash_balance": newCash.StringFixed(2),
@@ -648,6 +655,7 @@ func (h *Handler) UpdateWalletTransaction(c *gin.Context) {
 		return
 	}
 
+	service.InvalidateUserWalletSnapshots(middleware.GetUserID(c))
 	c.JSON(http.StatusOK, tx)
 }
 
@@ -663,6 +671,7 @@ func (h *Handler) DeleteWalletTransaction(c *gin.Context) {
 		return
 	}
 
+	service.InvalidateUserWalletSnapshots(middleware.GetUserID(c))
 	c.Status(http.StatusNoContent)
 }
 
@@ -906,3 +915,56 @@ func parseDate(dateStr string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("invalid date format")
 }
 
+func (h *Handler) GetAggregatedWalletSnapshots(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	rangeParam := c.DefaultQuery("range", "1M")
+	cacheKey := fmt.Sprintf("%d:%s", userID, rangeParam)
+
+	// Check cache first
+	if cached, ok := service.GetCachedWalletSnapshots(cacheKey); ok {
+		c.Data(http.StatusOK, "application/json", cached)
+		return
+	}
+
+	now := time.Now()
+	var from time.Time
+	switch rangeParam {
+	case "1W":
+		from = now.AddDate(0, 0, -7)
+	case "1M":
+		from = now.AddDate(0, -1, 0)
+	case "3M":
+		from = now.AddDate(0, -3, 0)
+	case "YTD":
+		from = time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location())
+	case "1Y":
+		from = now.AddDate(-1, 0, 0)
+	case "5Y":
+		from = now.AddDate(-5, 0, 0)
+	default: // ALL
+		from = time.Date(2000, 1, 1, 0, 0, 0, 0, now.Location())
+	}
+
+	rows, err := h.queries.GetAggregatedWalletSnapshots(c, db.GetAggregatedWalletSnapshotsParams{
+		UserID:         userID,
+		SnapshotDate:   from,
+		SnapshotDate_2: now,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to load snapshots")
+		return
+	}
+
+	// Apply downsampling
+	bucketType := rangeToBucketType(rangeParam)
+	rows = DownsampleSnapshots(rows, func(r db.GetAggregatedWalletSnapshotsRow) time.Time {
+		return r.SnapshotDate
+	}, bucketType)
+
+	// Cache the result
+	if data, err := json.Marshal(rows); err == nil {
+		service.SetCachedWalletSnapshots(cacheKey, data)
+	}
+
+	c.JSON(http.StatusOK, rows)
+}
