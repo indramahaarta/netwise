@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useState, useMemo } from 'react'
-import { format, startOfMonth, endOfMonth, addMonths, startOfYear, addYears, addDays } from 'date-fns'
+import { format, startOfMonth, endOfMonth, addMonths, startOfYear, addYears, addDays, startOfWeek, endOfWeek, subDays } from 'date-fns'
 import {
   useWallets,
   useAggregatedWalletSnapshots,
@@ -10,11 +10,17 @@ import {
   useAggregatedWalletCategories,
   useWalletSummary,
   useWalletCategoryBreakdown,
+  useWalletCategories,
+  useAddWalletTransactionForWallet,
 } from '@/hooks/use-wallets'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, Wallet, ChevronRight } from 'lucide-react'
+import { Plus, Wallet, ChevronRight, X, TrendingUp, TrendingDown, CalendarIcon } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Cell,
@@ -44,11 +50,26 @@ function fmtIDRCompact(value: string | number | undefined) {
 
 export default function WalletsPage() {
   const { data: wallets, isLoading } = useWallets()
+  const { data: allCategories } = useWalletCategories()
   const [chartRange, setChartRange] = useState('1M')
-  const [period, setPeriod] = useState<'day' | 'month' | 'year'>('month')
+  const [period, setPeriod] = useState<'day' | 'week' | 'month' | 'year' | 'range'>('month')
   const [selectedWallet, setSelectedWallet] = useState<number | null>(null)
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [rangeStart, setRangeStart] = useState(subDays(new Date(), 30))
+  const [rangeEnd, setRangeEnd] = useState(new Date())
   const { data: snapshots, isLoading: snapshotsLoading } = useAggregatedWalletSnapshots(chartRange)
+
+  // FAB and Add Transaction dialog state
+  const [showAddTx, setShowAddTx] = useState(false)
+  const [txWalletId, setTxWalletId] = useState('')
+  const [txAction, setTxAction] = useState<'income' | 'expense' | null>(null)
+  const [txAmount, setTxAmount] = useState('')
+  const [txCategoryId, setTxCategoryId] = useState('')
+  const [txNote, setTxNote] = useState('')
+  const [txDate, setTxDate] = useState<Date>(new Date())
+  const [txSaving, setTxSaving] = useState(false)
+  const [txError, setTxError] = useState('')
+  const addTx = useAddWalletTransactionForWallet()
 
   const totalBalance = (wallets ?? []).reduce(
     (sum, w) => sum + parseFloat(w.balance ?? '0'),
@@ -62,6 +83,13 @@ export default function WalletsPage() {
         start: format(new Date(), 'yyyy-MM-dd'),
         end: format(addDays(new Date(), 1), 'yyyy-MM-dd'),
       }
+    } else if (period === 'week') {
+      const weekStart = startOfWeek(new Date())
+      const weekEnd = endOfWeek(new Date())
+      return {
+        start: format(weekStart, 'yyyy-MM-dd'),
+        end: format(addDays(weekEnd, 1), 'yyyy-MM-dd'),
+      }
     } else if (period === 'month') {
       const monthStart = startOfMonth(currentMonth)
       const monthEnd = endOfMonth(currentMonth)
@@ -69,16 +97,21 @@ export default function WalletsPage() {
         start: format(monthStart, 'yyyy-MM-dd'),
         end: format(addDays(monthEnd, 1), 'yyyy-MM-dd'),
       }
-    } else {
-      // year
+    } else if (period === 'year') {
       const yearStart = startOfYear(currentMonth)
       const yearEnd = addYears(yearStart, 1)
       return {
         start: format(yearStart, 'yyyy-MM-dd'),
         end: format(yearEnd, 'yyyy-MM-dd'),
       }
+    } else {
+      // range
+      return {
+        start: format(rangeStart, 'yyyy-MM-dd'),
+        end: format(addDays(rangeEnd, 1), 'yyyy-MM-dd'),
+      }
     }
-  }, [period, currentMonth])
+  }, [period, currentMonth, rangeStart, rangeEnd])
 
   // Fetch aggregated or per-wallet data based on selection
   const { data: aggregatedSummary, isLoading: summaryLoading } = useAggregatedWalletSummary(
@@ -222,7 +255,7 @@ export default function WalletsPage() {
                 </div>
 
                 {/* Period toggle */}
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap items-end">
                   <div className="flex gap-1 bg-muted rounded-md p-1">
                     <Button
                       size="sm"
@@ -231,6 +264,14 @@ export default function WalletsPage() {
                       onClick={() => setPeriod('day')}
                     >
                       Day
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={period === 'week' ? 'default' : 'ghost'}
+                      className="text-xs"
+                      onClick={() => setPeriod('week')}
+                    >
+                      Week
                     </Button>
                     <Button
                       size="sm"
@@ -248,6 +289,14 @@ export default function WalletsPage() {
                     >
                       Year
                     </Button>
+                    <Button
+                      size="sm"
+                      variant={period === 'range' ? 'default' : 'ghost'}
+                      className="text-xs"
+                      onClick={() => setPeriod('range')}
+                    >
+                      Range
+                    </Button>
                   </div>
 
                   {/* Wallet selector */}
@@ -264,6 +313,40 @@ export default function WalletsPage() {
                     ))}
                   </select>
                 </div>
+
+                {/* Date range pickers for range period */}
+                {period === 'range' && (
+                  <div className="flex gap-2 pt-2">
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-xs">From</Label>
+                      <Popover>
+                        <PopoverTrigger>
+                          <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            <span className="text-left flex-1">{format(rangeStart, 'MMM d')}</span>
+                          </div>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar mode="single" selected={rangeStart} onSelect={(date) => date && setRangeStart(date)} />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-xs">To</Label>
+                      <Popover>
+                        <PopoverTrigger>
+                          <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            <span className="text-left flex-1">{format(rangeEnd, 'MMM d')}</span>
+                          </div>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar mode="single" selected={rangeEnd} onSelect={(date) => date && setRangeEnd(date)} />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+                )}
               </div>
             </CardHeader>
           </Card>
@@ -367,6 +450,213 @@ export default function WalletsPage() {
               </Card>
             </Link>
           ))}
+        </div>
+      )}
+
+      {/* Mobile Floating Action Button */}
+      <button
+        onClick={() => setShowAddTx(true)}
+        className="fixed bottom-6 right-6 md:hidden z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition-colors"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+
+      {/* Add Transaction Dialog */}
+      {showAddTx && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 p-4 overflow-hidden">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => {
+              setShowAddTx(false)
+              setTxWalletId('')
+              setTxAction(null)
+              setTxAmount('')
+              setTxCategoryId('')
+              setTxNote('')
+              setTxDate(new Date())
+              setTxError('')
+            }}
+          />
+          <div className="relative z-10 w-full md:max-w-sm bg-background rounded-t-xl md:rounded-lg flex flex-col max-h-[85vh] md:max-h-[90vh] mb-20 md:mb-0">
+            <div className="px-6 pt-6 pb-3 border-b shrink-0 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Add Transaction</h2>
+              <button
+                onClick={() => {
+                  setShowAddTx(false)
+                  setTxWalletId('')
+                  setTxAction(null)
+                  setTxAmount('')
+                  setTxCategoryId('')
+                  setTxNote('')
+                  setTxDate(new Date())
+                  setTxError('')
+                }}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-6 py-4 min-h-0 pb-24 md:pb-0 space-y-4">
+              {/* Wallet selector */}
+              <div className="space-y-1.5">
+                <Label>Wallet</Label>
+                <select
+                  className="w-full h-9 rounded-md border bg-background px-3 text-sm"
+                  value={txWalletId}
+                  onChange={(e) => setTxWalletId(e.target.value)}
+                  required
+                >
+                  <option value="">Select wallet...</option>
+                  {(wallets ?? []).map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Type selector */}
+              <div className="space-y-2">
+                <Label>Type</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={txAction === 'income' ? 'default' : 'outline'}
+                    className="flex-1 gap-2"
+                    onClick={() => setTxAction('income')}
+                  >
+                    <TrendingUp className="h-4 w-4" />
+                    Income
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={txAction === 'expense' ? 'default' : 'outline'}
+                    className="flex-1 gap-2"
+                    onClick={() => setTxAction('expense')}
+                  >
+                    <TrendingDown className="h-4 w-4" />
+                    Expense
+                  </Button>
+                </div>
+              </div>
+
+              {/* Amount */}
+              <div className="space-y-1.5">
+                <Label>Amount (IDR)</Label>
+                <Input
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder="0"
+                  value={txAmount}
+                  onChange={(e) => setTxAmount(e.target.value)}
+                  required
+                />
+              </div>
+
+              {/* Category selector */}
+              {txAction && (
+                <div className="space-y-1.5">
+                  <Label>Category</Label>
+                  <select
+                    className="w-full h-9 rounded-md border bg-background px-3 text-sm"
+                    value={txCategoryId}
+                    onChange={(e) => setTxCategoryId(e.target.value)}
+                    required
+                  >
+                    <option value="">Select category...</option>
+                    {(allCategories ?? [])
+                      .filter((c) => c.type === (txAction === 'income' ? 'INCOME' : 'EXPENSE'))
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Date picker */}
+              <div className="space-y-1.5">
+                <Label>Date</Label>
+                <Popover>
+                  <PopoverTrigger>
+                    <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      <span className="text-left flex-1">{format(txDate, 'MMM d, yyyy')}</span>
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar mode="single" selected={txDate} onSelect={(date) => date && setTxDate(date)} />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Note */}
+              <div className="space-y-1.5">
+                <Label>Note (optional)</Label>
+                <Input
+                  placeholder="Add a note..."
+                  value={txNote}
+                  onChange={(e) => setTxNote(e.target.value)}
+                />
+              </div>
+
+              {txError && <p className="text-sm text-destructive">{txError}</p>}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 pb-6 md:pb-4 border-t shrink-0 flex gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                className="flex-1"
+                onClick={() => {
+                  setShowAddTx(false)
+                  setTxWalletId('')
+                  setTxAction(null)
+                  setTxAmount('')
+                  setTxCategoryId('')
+                  setTxNote('')
+                  setTxDate(new Date())
+                  setTxError('')
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="flex-1"
+                disabled={txSaving || !txWalletId || !txAction || !txAmount || !txCategoryId}
+                onClick={async () => {
+                  setTxError('')
+                  if (!txWalletId || !txAction || !txAmount || !txCategoryId) return
+                  setTxSaving(true)
+                  try {
+                    await addTx.mutateAsync({
+                      walletId: parseInt(txWalletId),
+                      type: txAction === 'income' ? 'INCOME' : 'EXPENSE',
+                      amount: parseFloat(txAmount),
+                      category_id: parseInt(txCategoryId),
+                      note: txNote || undefined,
+                      transaction_time: format(txDate, 'yyyy-MM-dd'),
+                    })
+                    setShowAddTx(false)
+                    setTxWalletId('')
+                    setTxAction(null)
+                    setTxAmount('')
+                    setTxCategoryId('')
+                    setTxNote('')
+                    setTxDate(new Date())
+                  } catch (err: unknown) {
+                    const e = err as { response?: { data?: { error?: string } } }
+                    setTxError(e.response?.data?.error || 'Failed to add transaction')
+                  } finally {
+                    setTxSaving(false)
+                  }
+                }}
+              >
+                {txSaving ? 'Saving...' : 'Confirm'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

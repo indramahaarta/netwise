@@ -12,17 +12,19 @@ import (
 )
 
 type buyRequest struct {
-	Symbol   string  `json:"symbol" binding:"required"`
-	Quantity float64 `json:"quantity" binding:"required,gt=0"`
-	Price    float64 `json:"price" binding:"required,gt=0"`
-	Fee      float64 `json:"fee"`
+	Symbol          string  `json:"symbol" binding:"required"`
+	Quantity        float64 `json:"quantity" binding:"required,gt=0"`
+	Price           float64 `json:"price" binding:"required,gt=0"`
+	Fee             float64 `json:"fee"`
+	TransactionTime *string `json:"transaction_time"` // optional ISO 8601 / yyyy-MM-dd
 }
 
 type sellRequest struct {
-	Symbol   string  `json:"symbol" binding:"required"`
-	Quantity float64 `json:"quantity" binding:"required,gt=0"`
-	Price    float64 `json:"price" binding:"required,gt=0"`
-	Fee      float64 `json:"fee"`
+	Symbol          string  `json:"symbol" binding:"required"`
+	Quantity        float64 `json:"quantity" binding:"required,gt=0"`
+	Price           float64 `json:"price" binding:"required,gt=0"`
+	Fee             float64 `json:"fee"`
+	TransactionTime *string `json:"transaction_time"` // optional ISO 8601 / yyyy-MM-dd
 }
 
 func (h *Handler) BuyStock(c *gin.Context) {
@@ -114,6 +116,15 @@ func (h *Handler) BuyStock(c *gin.Context) {
 		return
 	}
 
+	txTime := time.Now()
+	if req.TransactionTime != nil {
+		if t, err := time.Parse(time.RFC3339, *req.TransactionTime); err == nil {
+			txTime = t
+		} else if t, err := time.Parse("2006-01-02", *req.TransactionTime); err == nil {
+			txTime = t
+		}
+	}
+
 	tx, err := h.queries.CreateTransaction(c, db.CreateTransactionParams{
 		PortfolioID:     portfolioID,
 		TickerID:        ticker.ID,
@@ -123,7 +134,7 @@ func (h *Handler) BuyStock(c *gin.Context) {
 		RealizedGain:    "0",
 		Fee:             fee.StringFixed(8),
 		TotalAmount:     totalCost.StringFixed(8),
-		TransactionTime: time.Now(),
+		TransactionTime: txTime,
 	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to record transaction")
@@ -212,6 +223,15 @@ func (h *Handler) SellStock(c *gin.Context) {
 		return
 	}
 
+	txTime := time.Now()
+	if req.TransactionTime != nil {
+		if t, err := time.Parse(time.RFC3339, *req.TransactionTime); err == nil {
+			txTime = t
+		} else if t, err := time.Parse("2006-01-02", *req.TransactionTime); err == nil {
+			txTime = t
+		}
+	}
+
 	tx, err := h.queries.CreateTransaction(c, db.CreateTransactionParams{
 		PortfolioID:     portfolioID,
 		TickerID:        ticker.ID,
@@ -221,7 +241,7 @@ func (h *Handler) SellStock(c *gin.Context) {
 		RealizedGain:    realizedGain.StringFixed(8),
 		Fee:             fee.StringFixed(8),
 		TotalAmount:     proceeds.StringFixed(8),
-		TransactionTime: time.Now(),
+		TransactionTime: txTime,
 	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to record transaction")

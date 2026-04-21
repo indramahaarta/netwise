@@ -22,6 +22,7 @@ export function useBuyStock(portfolioId: number | string) {
       quantity: number
       price: number
       fee?: number
+      transaction_time?: string
     }) =>
       api
         .post(`/api/v1/portfolios/${portfolioId}/buy`, data)
@@ -43,6 +44,7 @@ export function useSellStock(portfolioId: number | string) {
       quantity: number
       price: number
       fee?: number
+      transaction_time?: string
     }) =>
       api
         .post(`/api/v1/portfolios/${portfolioId}/sell`, data)

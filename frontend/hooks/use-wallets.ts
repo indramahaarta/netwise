@@ -82,11 +82,27 @@ export function useSetInitialBalance(id: string | number) {
 export function useAddWalletTransaction(id: string | number) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { type: 'INCOME' | 'EXPENSE'; amount: number; category_id: number; note?: string }) =>
+    mutationFn: (data: { type: 'INCOME' | 'EXPENSE'; amount: number; category_id: number; note?: string; transaction_time?: string }) =>
       api.post(`/api/v1/wallets/${id}/transactions`, data).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['wallets', id] })
       qc.invalidateQueries({ queryKey: ['wallet-transactions', id] })
+      qc.invalidateQueries({ queryKey: ['networth'] })
+    },
+  })
+}
+
+export function useAddWalletTransactionForWallet() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { walletId: number | string; type: 'INCOME' | 'EXPENSE'; amount: number; category_id: number; note?: string; transaction_time?: string }) => {
+      const { walletId, ...rest } = data
+      return api.post(`/api/v1/wallets/${walletId}/transactions`, rest).then((r) => r.data)
+    },
+    onSuccess: (data, variables) => {
+      qc.invalidateQueries({ queryKey: ['wallets', String(variables.walletId)] })
+      qc.invalidateQueries({ queryKey: ['wallet-transactions', String(variables.walletId)] })
+      qc.invalidateQueries({ queryKey: ['wallets'] })
       qc.invalidateQueries({ queryKey: ['networth'] })
     },
   })

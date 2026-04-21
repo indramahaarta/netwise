@@ -1,17 +1,21 @@
 'use client'
 
 import { useState } from 'react'
+import { format } from 'date-fns'
 import { useBuyStock, useSellStock } from '@/hooks/use-holdings'
 import { useStockSearch } from '@/hooks/use-networth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { CalendarIcon } from 'lucide-react'
 
 interface Props {
   portfolioId: number | string
@@ -29,6 +33,7 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
   const [fee, setFee] = useState('0')
   const [searchQuery, setSearchQuery] = useState('')
   const [error, setError] = useState('')
+  const [txDate, setTxDate] = useState<Date>(new Date())
 
   const buy = useBuyStock(portfolioId)
   const sell = useSellStock(portfolioId)
@@ -50,11 +55,13 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
         quantity: parseFloat(quantity),
         price: parseFloat(price),
         fee: parseFloat(fee || '0'),
+        transaction_time: format(txDate, 'yyyy-MM-dd'),
       })
       setSymbol('')
       setQuantity('')
       setPrice('')
       setFee('0')
+      setTxDate(new Date())
       onClose()
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } } }
@@ -136,6 +143,20 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
                 required
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Date</Label>
+            <Popover>
+              <PopoverTrigger>
+                <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  <span className="text-left flex-1">{format(txDate, 'MMM d, yyyy')}</span>
+                </div>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar mode="single" selected={txDate} onSelect={(date) => date && setTxDate(date)} />
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="space-y-2">
             <Label>Fee</Label>
