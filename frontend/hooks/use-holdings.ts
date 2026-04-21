@@ -58,6 +58,33 @@ export function useSellStock(portfolioId: number | string) {
   })
 }
 
+/** Accepts portfolioId as part of mutation data — safe to call outside a portfolio detail page */
+export function useTradeStockForPortfolio() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: {
+      portfolioId: number | string
+      side: 'BUY' | 'SELL'
+      symbol: string
+      quantity: number
+      price: number
+      fee?: number
+      transaction_time?: string
+    }) => {
+      const { portfolioId, side, ...payload } = data
+      return api
+        .post(`/api/v1/portfolios/${portfolioId}/${side === 'BUY' ? 'buy' : 'sell'}`, payload)
+        .then((r) => r.data)
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['holdings', variables.portfolioId] })
+      qc.invalidateQueries({ queryKey: ['portfolios', variables.portfolioId] })
+      qc.invalidateQueries({ queryKey: ['transactions', variables.portfolioId] })
+      qc.invalidateQueries({ queryKey: ['networth'] })
+    },
+  })
+}
+
 export function useTransactions(
   portfolioId: number | string,
   filters?: { ticker?: string; side?: string; from?: string; to?: string }

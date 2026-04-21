@@ -34,6 +34,7 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
   const [searchQuery, setSearchQuery] = useState('')
   const [error, setError] = useState('')
   const [txDate, setTxDate] = useState<Date>(new Date())
+  const [dateOpen, setDateOpen] = useState(false)
 
   const buy = useBuyStock(portfolioId)
   const sell = useSellStock(portfolioId)
@@ -127,6 +128,7 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
                 type="number"
                 step="any"
                 min="0"
+                inputMode="decimal"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
                 required
@@ -138,6 +140,7 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
                 type="number"
                 step="any"
                 min="0"
+                inputMode="decimal"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
                 required
@@ -146,7 +149,7 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
           </div>
           <div className="space-y-2">
             <Label>Date</Label>
-            <Popover>
+            <Popover open={dateOpen} onOpenChange={setDateOpen}>
               <PopoverTrigger>
                 <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
                   <CalendarIcon className="mr-2 h-4 w-4" />
@@ -154,7 +157,7 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
                 </div>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0">
-                <Calendar mode="single" selected={txDate} onSelect={(date) => date && setTxDate(date)} />
+                <Calendar mode="single" selected={txDate} onSelect={(date) => { if (date) { setTxDate(date); setDateOpen(false) } }} />
               </PopoverContent>
             </Popover>
           </div>
@@ -164,6 +167,7 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
               type="number"
               step="any"
               min="0"
+              inputMode="decimal"
               value={fee}
               onChange={(e) => setFee(e.target.value)}
             />

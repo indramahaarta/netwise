@@ -27,7 +27,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
-import { TrendingUp, TrendingDown, ArrowLeft, Plus } from 'lucide-react'
+import { TrendingUp, TrendingDown, ArrowLeft } from 'lucide-react'
 
 type DialogType = 'buy' | 'sell' | 'deposit' | 'withdraw' | 'dividend' | 'fee' | null
 
@@ -84,8 +84,7 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
   const { data: realizedData } = usePortfolioRealized(id)
   const [dialog, setDialog] = useState<DialogType>(null)
   const [selectedSymbol, setSelectedSymbol] = useState<string>()
-  const [chartRange, setChartRange] = useState<string>('1M')
-  const [fabOpen, setFabOpen] = useState(false)
+  const [chartRange, setChartRange] = useState<string>('1W')
   const [activeChartLines, setActiveChartLines] = useState<Set<ChartLineKey>>(
     new Set(['netWorth'])
   )
@@ -255,9 +254,9 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
 
       {/* Portfolio History Chart */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardHeader className="space-y-2 pb-2">
           <CardTitle className="text-sm">Portfolio History</CardTitle>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             {CHART_RANGES.map((r) => (
               <Button
                 key={r}
@@ -496,31 +495,6 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
         />
       )}
 
-      {/* Mobile Floating Action Menu */}
-      <div className="fixed bottom-20 right-4 md:hidden z-30 flex flex-col items-end gap-2">
-        {fabOpen && (
-          <>
-            <button
-              onClick={() => { setFabOpen(false); setDialog('sell') }}
-              className="h-12 px-4 rounded-full bg-destructive text-primary-foreground shadow-md flex items-center justify-center text-sm font-medium hover:bg-destructive/90 transition-colors"
-            >
-              Sell
-            </button>
-            <button
-              onClick={() => { setFabOpen(false); setDialog('buy') }}
-              className="h-12 px-4 rounded-full bg-primary text-primary-foreground shadow-md flex items-center justify-center text-sm font-medium hover:bg-primary/90 transition-colors"
-            >
-              Buy
-            </button>
-          </>
-        )}
-        <button
-          onClick={() => setFabOpen(!fabOpen)}
-          className="h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition-colors"
-        >
-          <Plus className={`h-6 w-6 transition-transform ${fabOpen ? 'rotate-45' : ''}`} />
-        </button>
-      </div>
     </div>
   )
 }

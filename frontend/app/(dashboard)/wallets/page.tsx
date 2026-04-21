@@ -28,6 +28,14 @@ import {
 
 const COLORS = ['#ef4444', '#10b981', '#f59e0b', '#06b6d4', '#8b5cf6', '#ec4899']
 
+const tooltipStyle = {
+  backgroundColor: 'hsl(var(--popover))',
+  border: '1px solid hsl(var(--border))',
+  borderRadius: '6px',
+  color: 'hsl(var(--popover-foreground))',
+  fontSize: 12,
+}
+
 function fmtIDR(value: string | number | undefined, decimals = 0) {
   const num = parseFloat(String(value ?? '0'))
   return new Intl.NumberFormat('id-ID', {
@@ -51,12 +59,14 @@ function fmtIDRCompact(value: string | number | undefined) {
 export default function WalletsPage() {
   const { data: wallets, isLoading } = useWallets()
   const { data: allCategories } = useWalletCategories()
-  const [chartRange, setChartRange] = useState('1M')
+  const [chartRange, setChartRange] = useState('1W')
   const [period, setPeriod] = useState<'day' | 'week' | 'month' | 'year' | 'range'>('month')
   const [selectedWallet, setSelectedWallet] = useState<number | null>(null)
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [rangeStart, setRangeStart] = useState(subDays(new Date(), 30))
   const [rangeEnd, setRangeEnd] = useState(new Date())
+  const [rangeStartOpen, setRangeStartOpen] = useState(false)
+  const [rangeEndOpen, setRangeEndOpen] = useState(false)
   const { data: snapshots, isLoading: snapshotsLoading } = useAggregatedWalletSnapshots(chartRange)
 
   // FAB and Add Transaction dialog state
@@ -67,6 +77,7 @@ export default function WalletsPage() {
   const [txCategoryId, setTxCategoryId] = useState('')
   const [txNote, setTxNote] = useState('')
   const [txDate, setTxDate] = useState<Date>(new Date())
+  const [txDateOpen, setTxDateOpen] = useState(false)
   const [txSaving, setTxSaving] = useState(false)
   const [txError, setTxError] = useState('')
   const addTx = useAddWalletTransactionForWallet()
@@ -191,10 +202,10 @@ export default function WalletsPage() {
       {/* Balance over time chart */}
       {!isLoading && (wallets ?? []).length > 0 && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardHeader className="space-y-2 pb-2">
             <CardTitle className="text-sm">Total Balance Over Time</CardTitle>
-            <div className="flex gap-1">
-              {['1M', '3M', '1Y', 'ALL'].map((r) => (
+            <div className="flex flex-wrap gap-1">
+              {['1W', '1M', '3M', 'YTD', '1Y', '5Y', 'ALL'].map((r) => (
                 <Button
                   key={r}
                   size="sm"
@@ -227,7 +238,7 @@ export default function WalletsPage() {
                       maximumFractionDigits: 1,
                     }).format(num)
                   }} />
-                  <Tooltip formatter={(v: any) => fmtIDR(v)} />
+                  <Tooltip formatter={(v: any) => fmtIDR(v)} contentStyle={tooltipStyle} />
                   <Line type="monotone" dataKey="balance" stroke="#3b82f6" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
@@ -241,113 +252,97 @@ export default function WalletsPage() {
         <>
           {/* Period and Wallet selector */}
           <Card>
-            <CardHeader>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-sm">Transaction Summary</CardTitle>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {selectedWallet === null
-                        ? 'All wallets'
-                        : wallets?.find((w) => w.id === selectedWallet)?.name || 'Unknown wallet'}
-                    </p>
-                  </div>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-sm">Transaction Summary</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {selectedWallet === null
+                      ? 'All wallets'
+                      : wallets?.find((w) => w.id === selectedWallet)?.name || 'Unknown wallet'}
+                  </p>
                 </div>
-
-                {/* Period toggle */}
-                <div className="flex gap-2 flex-wrap items-end">
-                  <div className="flex gap-1 bg-muted rounded-md p-1">
-                    <Button
-                      size="sm"
-                      variant={period === 'day' ? 'default' : 'ghost'}
-                      className="text-xs"
-                      onClick={() => setPeriod('day')}
-                    >
-                      Day
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={period === 'week' ? 'default' : 'ghost'}
-                      className="text-xs"
-                      onClick={() => setPeriod('week')}
-                    >
-                      Week
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={period === 'month' ? 'default' : 'ghost'}
-                      className="text-xs"
-                      onClick={() => setPeriod('month')}
-                    >
-                      Month
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={period === 'year' ? 'default' : 'ghost'}
-                      className="text-xs"
-                      onClick={() => setPeriod('year')}
-                    >
-                      Year
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={period === 'range' ? 'default' : 'ghost'}
-                      className="text-xs"
-                      onClick={() => setPeriod('range')}
-                    >
-                      Range
-                    </Button>
-                  </div>
-
-                  {/* Wallet selector */}
-                  <select
-                    className="ml-auto h-9 rounded-md border bg-background px-3 text-sm"
-                    value={selectedWallet === null ? 'all' : selectedWallet}
-                    onChange={(e) => setSelectedWallet(e.target.value === 'all' ? null : parseInt(e.target.value))}
-                  >
-                    <option value="all">All Wallets</option>
-                    {(wallets ?? []).map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Date range pickers for range period */}
-                {period === 'range' && (
-                  <div className="flex gap-2 pt-2">
-                    <div className="flex-1 space-y-1">
-                      <Label className="text-xs">From</Label>
-                      <Popover>
-                        <PopoverTrigger>
-                          <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            <span className="text-left flex-1">{format(rangeStart, 'MMM d')}</span>
-                          </div>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                          <Calendar mode="single" selected={rangeStart} onSelect={(date) => date && setRangeStart(date)} />
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <Label className="text-xs">To</Label>
-                      <Popover>
-                        <PopoverTrigger>
-                          <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            <span className="text-left flex-1">{format(rangeEnd, 'MMM d')}</span>
-                          </div>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                          <Calendar mode="single" selected={rangeEnd} onSelect={(date) => date && setRangeEnd(date)} />
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                  </div>
-                )}
+                <select
+                  className="h-8 rounded-md border bg-background px-2 text-xs shrink-0 max-w-[140px]"
+                  value={selectedWallet === null ? 'all' : selectedWallet}
+                  onChange={(e) => setSelectedWallet(e.target.value === 'all' ? null : parseInt(e.target.value))}
+                >
+                  <option value="all">All Wallets</option>
+                  {(wallets ?? []).map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
               </div>
+
+              {/* Period toggle — even 5-col grid, never wraps */}
+              <div className="grid grid-cols-5 gap-1 bg-muted rounded-md p-1 mt-3">
+                {(['day', 'week', 'month', 'year', 'range'] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPeriod(p)}
+                    className={`rounded-sm py-1 text-xs font-medium transition-colors capitalize
+                      ${period === p
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+
+              {/* Month navigation */}
+              {period === 'month' && (
+                <div className="flex items-center justify-between mt-2">
+                  <button
+                    onClick={() => setCurrentMonth((m) => addMonths(m, -1))}
+                    className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded"
+                  >
+                    ← Prev
+                  </button>
+                  <span className="text-xs font-medium">{format(currentMonth, 'MMMM yyyy')}</span>
+                  <button
+                    onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
+                    className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded"
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
+
+              {/* Date range pickers */}
+              {period === 'range' && (
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">From</p>
+                    <Popover open={rangeStartOpen} onOpenChange={setRangeStartOpen}>
+                      <PopoverTrigger>
+                        <div className="w-full inline-flex items-center rounded-md border border-input bg-background px-2 py-1.5 text-xs gap-1.5">
+                          <CalendarIcon className="h-3 w-3 shrink-0" />
+                          <span>{format(rangeStart, 'MMM d, yyyy')}</span>
+                        </div>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar mode="single" selected={rangeStart} onSelect={(date) => { if (date) { setRangeStart(date); setRangeStartOpen(false) } }} />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">To</p>
+                    <Popover open={rangeEndOpen} onOpenChange={setRangeEndOpen}>
+                      <PopoverTrigger>
+                        <div className="w-full inline-flex items-center rounded-md border border-input bg-background px-2 py-1.5 text-xs gap-1.5">
+                          <CalendarIcon className="h-3 w-3 shrink-0" />
+                          <span>{format(rangeEnd, 'MMM d, yyyy')}</span>
+                        </div>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar mode="single" selected={rangeEnd} onSelect={(date) => { if (date) { setRangeEnd(date); setRangeEndOpen(false) } }} />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+              )}
             </CardHeader>
           </Card>
 
@@ -365,7 +360,7 @@ export default function WalletsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: any) => fmtIDRCompact(v)} />
-                    <Tooltip formatter={(v: any) => fmtIDR(v, 2)} />
+                    <Tooltip formatter={(v: any) => fmtIDR(v, 2)} contentStyle={tooltipStyle} />
                     <Bar dataKey="value" radius={[8, 8, 0, 0]}>
                       {incomeExpenseData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.name === 'Income' ? '#10b981' : '#ef4444'} />
@@ -391,7 +386,7 @@ export default function WalletsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v: any) => fmtIDRCompact(v)} />
                     <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} />
-                    <Tooltip formatter={(v: any) => fmtIDR(v, 2)} />
+                    <Tooltip formatter={(v: any) => fmtIDR(v, 2)} contentStyle={tooltipStyle} />
                     <Bar dataKey="value" radius={[0, 8, 8, 0]}>
                       {categoryData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -456,7 +451,7 @@ export default function WalletsPage() {
       {/* Mobile Floating Action Button */}
       <button
         onClick={() => setShowAddTx(true)}
-        className="fixed bottom-6 right-6 md:hidden z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition-colors"
+        className="fixed bottom-20 right-6 md:hidden z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition-colors"
       >
         <Plus className="h-6 w-6" />
       </button>
@@ -546,6 +541,7 @@ export default function WalletsPage() {
                   type="number"
                   step="any"
                   min="0"
+                  inputMode="decimal"
                   placeholder="0"
                   value={txAmount}
                   onChange={(e) => setTxAmount(e.target.value)}
@@ -576,7 +572,7 @@ export default function WalletsPage() {
               {/* Date picker */}
               <div className="space-y-1.5">
                 <Label>Date</Label>
-                <Popover>
+                <Popover open={txDateOpen} onOpenChange={setTxDateOpen}>
                   <PopoverTrigger>
                     <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
                       <CalendarIcon className="mr-2 h-4 w-4" />
@@ -584,7 +580,7 @@ export default function WalletsPage() {
                     </div>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={txDate} onSelect={(date) => date && setTxDate(date)} />
+                    <Calendar mode="single" selected={txDate} onSelect={(date) => { if (date) { setTxDate(date); setTxDateOpen(false) } }} />
                   </PopoverContent>
                 </Popover>
               </div>

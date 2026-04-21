@@ -170,9 +170,9 @@ export default function ImportPage({ params }: { params: Promise<{ id: string }>
                   {row.symbol && <p className="text-xs text-primary mt-1">Selected: {row.symbol}</p>}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Input type="number" step="any" min="0" placeholder="Shares" value={row.shares}
+                  <Input type="number" step="any" min="0" inputMode="decimal" placeholder="Shares" value={row.shares}
                     onChange={(e) => updateRow(row.id, { shares: e.target.value })} />
-                  <Input type="number" step="any" min="0" placeholder="Avg cost" value={row.avgCost}
+                  <Input type="number" step="any" min="0" inputMode="decimal" placeholder="Avg cost" value={row.avgCost}
                     onChange={(e) => updateRow(row.id, { avgCost: e.target.value })} />
                 </div>
               </div>

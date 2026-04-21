@@ -66,6 +66,7 @@ export function DividendDialog({ portfolioId, portfolioCurrency, open, onClose }
               type="number"
               step="any"
               min="0"
+              inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               required

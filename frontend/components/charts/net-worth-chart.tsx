@@ -135,7 +135,7 @@ function mergePortfolioSnapshots(
 }
 
 export function NetWorthChart({ currency, liveData, portfolios = [] }: Props) {
-  const [range, setRange] = useState<string>('1M')
+  const [range, setRange] = useState<string>('1W')
   const [activeLines, setActiveLines] = useState<Set<LineKey>>(
     new Set(['netWorth'] as const)
   )

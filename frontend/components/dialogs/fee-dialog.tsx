@@ -56,6 +56,7 @@ export function FeeDialog({ portfolioId, portfolioCurrency, open, onClose }: Pro
               type="number"
               step="any"
               min="0"
+              inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               required

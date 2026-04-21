@@ -127,6 +127,7 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
                 type="number"
                 step="any"
                 min="0"
+                inputMode="decimal"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 required
@@ -140,6 +141,7 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
                 type="number"
                 step="any"
                 min="0"
+                inputMode="decimal"
                 placeholder="e.g. 16000"
                 value={brokerRate}
                 onChange={(e) => setBrokerRate(e.target.value)}

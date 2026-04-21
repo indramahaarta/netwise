@@ -2,19 +2,26 @@
 
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
+import { format } from 'date-fns'
 import { useNetWorth } from '@/hooks/use-networth'
 import { usePortfolios } from '@/hooks/use-portfolios'
 import { usePortfolioSnapshots } from '@/hooks/use-networth'
+import { useStockSearch } from '@/hooks/use-networth'
 import { useAmount } from '@/context/ui-settings'
+import { useTradeStockForPortfolio } from '@/hooks/use-holdings'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
-import { Plus, TrendingDown, TrendingUp } from 'lucide-react'
+import { Plus, TrendingDown, TrendingUp, CalendarIcon, X } from 'lucide-react'
 
 type Currency = 'USD' | 'IDR'
 
@@ -71,13 +78,28 @@ type ChartLineKey = (typeof CHART_LINES)[number]['key']
 
 export default function PortfoliosPage() {
   const [currency, setCurrency] = useState<Currency>('USD')
-  const [chartRange, setChartRange] = useState<string>('1M')
+  const [chartRange, setChartRange] = useState<string>('1W')
   const [activeChartLines, setActiveChartLines] = useState<Set<ChartLineKey>>(
     new Set(['netWorth'])
   )
+  const [showTradeForm, setShowTradeForm] = useState(false)
+  const [tradePortfolioId, setTradePortfolioId] = useState('')
+  const [tradeSide, setTradeSide] = useState<'BUY' | 'SELL' | null>(null)
+  const [tradeSymbol, setTradeSymbol] = useState('')
+  const [tradeSearchQuery, setTradeSearchQuery] = useState('')
+  const [tradeQuantity, setTradeQuantity] = useState('')
+  const [tradePrice, setTradePrice] = useState('')
+  const [tradeFee, setTradeFee] = useState('0')
+  const [tradeDate, setTradeDate] = useState<Date>(new Date())
+  const [tradeDateOpen, setTradeDateOpen] = useState(false)
+  const [tradeError, setTradeError] = useState('')
+  const [tradeSaving, setTradeSaving] = useState(false)
   const { data: nw, isLoading: nwLoading } = useNetWorth(currency)
   const { data: portfolios, isLoading: pLoading } = usePortfolios()
   const fmtAmt = useAmount()
+  const tradeStock = useTradeStockForPortfolio()
+  const selectedPortfolio = (portfolios ?? []).find((p) => p.id === parseInt(tradePortfolioId))
+  const { data: searchResults } = useStockSearch(tradeSearchQuery, selectedPortfolio?.currency === 'IDR' ? 'ID' : 'US')
 
   // Fetch snapshots for all portfolios
   const portfolio1 = usePortfolioSnapshots(portfolios?.[0]?.id ?? null, chartRange, currency)
@@ -132,6 +154,57 @@ export default function PortfoliosPage() {
     })
   }
 
+  const totalCost = parseFloat(tradeQuantity || '0') * parseFloat(tradePrice || '0') +
+    (tradeSide === 'BUY' ? parseFloat(tradeFee || '0') : -parseFloat(tradeFee || '0'))
+
+  async function handleTrade() {
+    setTradeError('')
+    if (!tradePortfolioId || !tradeSide || !tradeSymbol || !tradeQuantity || !tradePrice) {
+      setTradeError('Please fill in all required fields')
+      return
+    }
+    setTradeSaving(true)
+    try {
+      await tradeStock.mutateAsync({
+        portfolioId: parseInt(tradePortfolioId),
+        side: tradeSide,
+        symbol: tradeSymbol,
+        quantity: parseFloat(tradeQuantity),
+        price: parseFloat(tradePrice),
+        fee: parseFloat(tradeFee || '0'),
+        transaction_time: format(tradeDate, 'yyyy-MM-dd'),
+      })
+      setShowTradeForm(false)
+      setTradePortfolioId('')
+      setTradeSide(null)
+      setTradeSymbol('')
+      setTradeSearchQuery('')
+      setTradeQuantity('')
+      setTradePrice('')
+      setTradeFee('0')
+      setTradeDate(new Date())
+      setTradeError('')
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } } }
+      setTradeError(e.response?.data?.error || 'Transaction failed')
+    } finally {
+      setTradeSaving(false)
+    }
+  }
+
+  function closeTradeForm() {
+    setShowTradeForm(false)
+    setTradePortfolioId('')
+    setTradeSide(null)
+    setTradeSymbol('')
+    setTradeSearchQuery('')
+    setTradeQuantity('')
+    setTradePrice('')
+    setTradeFee('0')
+    setTradeDate(new Date())
+    setTradeError('')
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -162,9 +235,9 @@ export default function PortfoliosPage() {
 
       {/* Chart — Portfolio cash only, no wallet */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardHeader className="space-y-2 pb-2">
           <CardTitle className="text-sm">Portfolio History</CardTitle>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             {CHART_RANGES.map((r) => (
               <Button
                 key={r}
@@ -319,6 +392,217 @@ export default function PortfoliosPage() {
               </Link>
             )
           })}
+        </div>
+      )}
+
+      {/* Mobile FAB */}
+      <button
+        onClick={() => setShowTradeForm(true)}
+        className="fixed bottom-20 right-6 md:hidden z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition-colors"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+
+      {/* Trade Form */}
+      {showTradeForm && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 p-4 overflow-hidden">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={closeTradeForm}
+          />
+          <div className="relative z-10 w-full md:max-w-sm bg-background rounded-t-xl md:rounded-lg flex flex-col max-h-[85vh] md:max-h-[90vh] mb-20 md:mb-0">
+            <div className="px-6 pt-6 pb-3 border-b shrink-0 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Trade Stock</h2>
+              <button
+                onClick={closeTradeForm}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-6 py-4 min-h-0 pb-24 md:pb-0 space-y-4">
+              {/* Portfolio selector */}
+              <div className="space-y-1.5">
+                <Label>Portfolio</Label>
+                <select
+                  className="w-full h-9 rounded-md border bg-background px-3 text-sm"
+                  value={tradePortfolioId}
+                  onChange={(e) => setTradePortfolioId(e.target.value)}
+                  required
+                >
+                  <option value="">Select portfolio...</option>
+                  {(portfolios ?? []).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.currency})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Buy/Sell toggle */}
+              <div className="space-y-2">
+                <Label>Action</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={tradeSide === 'BUY' ? 'default' : 'outline'}
+                    className="flex-1"
+                    onClick={() => setTradeSide('BUY')}
+                  >
+                    Buy
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={tradeSide === 'SELL' ? 'destructive' : 'outline'}
+                    className="flex-1"
+                    onClick={() => setTradeSide('SELL')}
+                  >
+                    Sell
+                  </Button>
+                </div>
+              </div>
+
+              {/* Symbol search */}
+              <div className="space-y-1.5">
+                    <Label>Symbol</Label>
+                    <Input
+                      placeholder="Search symbol..."
+                      value={tradeSearchQuery}
+                      onChange={(e) => setTradeSearchQuery(e.target.value)}
+                    />
+                    {tradeSearchQuery && !tradeSymbol && (
+                      <div className="border rounded-md max-h-36 overflow-y-auto">
+                        {searchResults?.result && searchResults.result.length > 0 ? (
+                          searchResults.result.slice(0, 8).map((r) => (
+                            <button
+                              key={r.symbol}
+                              type="button"
+                              className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center justify-between"
+                              onClick={() => {
+                                setTradeSymbol(r.symbol)
+                                setTradeSearchQuery('')
+                              }}
+                            >
+                              <span className="font-medium">{r.displaySymbol}</span>
+                              <span className="text-muted-foreground text-xs truncate ml-2">
+                                {r.description}
+                              </span>
+                            </button>
+                          ))
+                        ) : (
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-sm hover:bg-accent"
+                            onClick={() => {
+                              setTradeSymbol(tradeSearchQuery.toUpperCase())
+                              setTradeSearchQuery('')
+                            }}
+                          >
+                            Use <span className="font-medium">{tradeSearchQuery.toUpperCase()}</span> directly
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {tradeSymbol && (
+                      <p className="text-sm font-medium text-primary">Selected: {tradeSymbol}</p>
+                    )}
+                  </div>
+
+                  {/* Quantity and Price */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Quantity</Label>
+                      <Input
+                        type="number"
+                        step="any"
+                        min="0"
+                        inputMode="decimal"
+                        placeholder="0"
+                        value={tradeQuantity}
+                        onChange={(e) => setTradeQuantity(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Price</Label>
+                      <Input
+                        type="number"
+                        step="any"
+                        min="0"
+                        inputMode="decimal"
+                        placeholder="0"
+                        value={tradePrice}
+                        onChange={(e) => setTradePrice(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Date */}
+                  <div className="space-y-1.5">
+                    <Label>Date</Label>
+                    <Popover open={tradeDateOpen} onOpenChange={setTradeDateOpen}>
+                      <PopoverTrigger>
+                        <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          <span className="text-left flex-1">{format(tradeDate, 'MMM d, yyyy')}</span>
+                        </div>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar mode="single" selected={tradeDate} onSelect={(date) => { if (date) { setTradeDate(date); setTradeDateOpen(false) } }} />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  {/* Fee */}
+                  <div className="space-y-1.5">
+                    <Label>Fee</Label>
+                    <Input
+                      type="number"
+                      step="any"
+                      min="0"
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={tradeFee}
+                      onChange={(e) => setTradeFee(e.target.value)}
+                    />
+                  </div>
+
+              {/* Total cost display */}
+              {tradeQuantity && tradePrice && (
+                <div className="rounded-md bg-muted p-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      {tradeSide === 'BUY' ? 'Total cost' : 'Proceeds'}
+                    </span>
+                    <span className="font-medium">{totalCost.toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+
+              {tradeError && <p className="text-sm text-destructive">{tradeError}</p>}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 pb-6 md:pb-4 border-t shrink-0 flex gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                className="flex-1"
+                onClick={closeTradeForm}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="flex-1"
+                variant={tradeSide === 'SELL' ? 'destructive' : 'default'}
+                disabled={tradeSaving || !tradePortfolioId || !tradeSide || !tradeSymbol || !tradeQuantity || !tradePrice}
+                onClick={handleTrade}
+              >
+                {tradeSaving ? 'Processing...' : tradeSide || 'Trade'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

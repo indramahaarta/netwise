@@ -63,6 +63,14 @@ function fmtDate(dateStr: string) {
   })
 }
 
+const tooltipStyle = {
+  backgroundColor: 'hsl(var(--popover))',
+  border: '1px solid hsl(var(--border))',
+  borderRadius: '6px',
+  color: 'hsl(var(--popover-foreground))',
+  fontSize: 12,
+}
+
 function txSign(tx: WalletTransaction) {
   return ['INCOME', 'TRANSFER_IN', 'PORTFOLIO_WITHDRAWAL'].includes(tx.type) ? '+' : '-'
 }
@@ -190,6 +198,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
   const [portfolioId, setPortfolioId] = useState('')
   const [brokerRate, setBrokerRate] = useState('')
   const [txDate, setTxDate] = useState<Date>(new Date())
+  const [txDateOpen, setTxDateOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [swipeOffsets, setSwipeOffsets] = useState<{ [key: number]: number }>({})
   const [swipeStartX, setSwipeStartX] = useState<{ [key: number]: number }>({})
@@ -592,7 +601,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: any) => fmtIDRCompact(v)} />
-                  <Tooltip formatter={(v: any) => fmtIDR(v, 2)} />
+                  <Tooltip formatter={(v: any) => fmtIDR(v, 2)} contentStyle={tooltipStyle} />
                   <Bar dataKey="value" radius={[8, 8, 0, 0]}>
                     {incomeExpenseData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.name === 'Income' ? '#10b981' : '#ef4444'} />
@@ -616,7 +625,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v: any) => fmtIDRCompact(v)} />
                   <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} />
-                  <Tooltip formatter={(v: any) => fmtIDR(v, 2)} />
+                  <Tooltip formatter={(v: any) => fmtIDR(v, 2)} contentStyle={tooltipStyle} />
                   <Bar dataKey="value" radius={[0, 8, 8, 0]}>
                     {categoryData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -711,6 +720,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                     type="number"
                     step="any"
                     min="0"
+                    inputMode="decimal"
                     placeholder="0"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
@@ -797,7 +807,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                 {/* Date picker */}
                 <div className="space-y-1.5">
                   <Label>Date</Label>
-                  <Popover>
+                  <Popover open={txDateOpen} onOpenChange={setTxDateOpen}>
                     <PopoverTrigger>
                       <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
                         <CalendarIcon className="mr-2 h-4 w-4" />
@@ -805,7 +815,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                       </div>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
-                      <Calendar mode="single" selected={txDate} onSelect={(date) => date && setTxDate(date)} />
+                      <Calendar mode="single" selected={txDate} onSelect={(date) => { if (date) { setTxDate(date); setTxDateOpen(false) } }} />
                     </PopoverContent>
                   </Popover>
                 </div>
