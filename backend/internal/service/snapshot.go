@@ -249,3 +249,33 @@ func decimalFromString(s string) decimal.Decimal {
 	d, _ := decimal.NewFromString(s)
 	return d
 }
+
+// RecomputeWalletSnapshotsFrom recomputes wallet_snapshot rows for walletID
+// from startDate through yesterday (UTC). Called after a backdated transaction
+// is added, updated, or deleted so all affected snapshot rows stay accurate.
+func RecomputeWalletSnapshotsFrom(ctx context.Context, queries *db.Queries, walletID int64, startDate time.Time) {
+	yesterday := time.Now().UTC().Truncate(24 * time.Hour).Add(-24 * time.Hour)
+	d := startDate.UTC().Truncate(24 * time.Hour)
+	if d.After(yesterday) {
+		return // today's or future transactions don't affect past snapshots
+	}
+
+	w, err := queries.GetWallet(ctx, walletID)
+	if err != nil {
+		log.Printf("recompute snapshots: wallet %d not found: %v", walletID, err)
+		return
+	}
+
+	var idrToUsd float64 = 1
+	if rate, err := GetFreeForexRate("IDR", "USD"); err == nil && rate > 0 {
+		idrToUsd = rate
+	}
+	idrToUsdD := decimal.NewFromFloat(idrToUsd)
+
+	for !d.After(yesterday) {
+		if err := snapshotWallet(ctx, queries, w, idrToUsdD, d); err != nil {
+			log.Printf("recompute wallet snapshot wallet %d date %s: %v", walletID, d.Format("2006-01-02"), err)
+		}
+		d = d.Add(24 * time.Hour)
+	}
+}

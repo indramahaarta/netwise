@@ -103,6 +103,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
   const deleteTx = useDeleteWalletTransaction(id)
   const deleteWallet = useDeleteWallet(id)
   const createCategory = useCreateWalletCategory()
+  const transferWallets = useTransferWallets()
 
   // Calendar state
   const [currentMonth, setCurrentMonth] = useState(new Date())
@@ -214,7 +215,9 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!amount || parseFloat(amount) <= 0 || !action || !categoryId) return
+    if (!amount || parseFloat(amount) <= 0 || !action) return
+    if ((action === 'income' || action === 'expense') && !categoryId) return
+    if (action === 'transfer' && !toWalletId) return
     setSaving(true)
 
     try {
@@ -231,6 +234,13 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
         } else {
           await addTx.mutateAsync(txData)
         }
+      } else if (action === 'transfer') {
+        await transferWallets.mutateAsync({
+          from_wallet_id: parseInt(id),
+          to_wallet_id: parseInt(toWalletId),
+          amount: parseFloat(amount),
+          note,
+        })
       }
       setShowTypeDialog(false)
       resetForm()
@@ -664,8 +674,35 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                       <TrendingDown className="h-4 w-4" />
                       Expense
                     </Button>
+                    <Button
+                      type="button"
+                      variant={action === 'transfer' ? 'default' : 'outline'}
+                      className="flex-1 gap-2"
+                      onClick={() => setAction('transfer')}
+                    >
+                      <ArrowLeftRight className="h-4 w-4" />
+                      Transfer
+                    </Button>
                   </div>
                 </div>
+
+                {/* Transfer wallet selector */}
+                {action === 'transfer' && (
+                  <div className="space-y-1.5">
+                    <Label>To Wallet</Label>
+                    <select
+                      className="w-full h-9 rounded-md border bg-background px-3 text-sm"
+                      value={toWalletId}
+                      onChange={(e) => setToWalletId(e.target.value)}
+                      required
+                    >
+                      <option value="">Select wallet...</option>
+                      {otherWallets.map((w) => (
+                        <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* Amount */}
                 <div className="space-y-1.5">
@@ -682,7 +719,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                 </div>
 
                 {/* Category selector */}
-                {action && (
+                {(action === 'income' || action === 'expense') && (
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <Label>Category</Label>

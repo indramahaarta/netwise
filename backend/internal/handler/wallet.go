@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -335,6 +336,10 @@ func (h *Handler) AddWalletTransaction(c *gin.Context) {
 	}
 
 	service.InvalidateUserWalletSnapshots(middleware.GetUserID(c))
+	if txTime.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+		wID := walletID
+		go service.RecomputeWalletSnapshotsFrom(context.Background(), h.queries, wID, txTime)
+	}
 	c.JSON(http.StatusCreated, tx)
 }
 
@@ -625,6 +630,16 @@ func (h *Handler) UpdateWalletTransaction(c *gin.Context) {
 		return
 	}
 
+	// Fetch old transaction to get its date
+	oldTx, err := h.queries.GetWalletTransaction(c, db.GetWalletTransactionParams{
+		ID:       txID,
+		WalletID: walletID,
+	})
+	if err != nil {
+		respondNotFound(c, "transaction")
+		return
+	}
+
 	// Parse transaction time
 	txTime, err := time.Parse(time.RFC3339, req.TransactionTime)
 	if err != nil {
@@ -656,12 +671,30 @@ func (h *Handler) UpdateWalletTransaction(c *gin.Context) {
 	}
 
 	service.InvalidateUserWalletSnapshots(middleware.GetUserID(c))
+	earliestDate := oldTx.TransactionTime
+	if txTime.Before(earliestDate) {
+		earliestDate = txTime
+	}
+	if earliestDate.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+		wID := walletID
+		go service.RecomputeWalletSnapshotsFrom(context.Background(), h.queries, wID, earliestDate)
+	}
 	c.JSON(http.StatusOK, tx)
 }
 
 func (h *Handler) DeleteWalletTransaction(c *gin.Context) {
 	walletID := getWalletID(c)
 	txID := paramInt64(c, "txId")
+
+	// Fetch before deleting to get the date
+	oldTx, err := h.queries.GetWalletTransaction(c, db.GetWalletTransactionParams{
+		ID:       txID,
+		WalletID: walletID,
+	})
+	if err != nil {
+		respondNotFound(c, "transaction")
+		return
+	}
 
 	if err := h.queries.DeleteWalletTransaction(c, db.DeleteWalletTransactionParams{
 		ID:       txID,
@@ -672,6 +705,10 @@ func (h *Handler) DeleteWalletTransaction(c *gin.Context) {
 	}
 
 	service.InvalidateUserWalletSnapshots(middleware.GetUserID(c))
+	if oldTx.TransactionTime.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+		wID := walletID
+		go service.RecomputeWalletSnapshotsFrom(context.Background(), h.queries, wID, oldTx.TransactionTime)
+	}
 	c.Status(http.StatusNoContent)
 }
 

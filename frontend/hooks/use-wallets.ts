@@ -97,7 +97,11 @@ export function useTransferWallets() {
   return useMutation({
     mutationFn: (data: { from_wallet_id: number; to_wallet_id: number; amount: number; note?: string }) =>
       api.post('/api/v1/wallets/transfer', data).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wallets'] }),
+    onSuccess: (data, variables) => {
+      qc.invalidateQueries({ queryKey: ['wallets'] })
+      qc.invalidateQueries({ queryKey: ['wallet-transactions', String(variables.from_wallet_id)] })
+      qc.invalidateQueries({ queryKey: ['wallet-transactions', String(variables.to_wallet_id)] })
+    },
   })
 }
 
