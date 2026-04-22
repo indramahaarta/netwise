@@ -8,6 +8,7 @@ import { usePortfolios } from '@/hooks/use-portfolios'
 import { usePortfolioSnapshots } from '@/hooks/use-networth'
 import { useStockSearch } from '@/hooks/use-networth'
 import { useAmount } from '@/context/ui-settings'
+import { formatAmount, formatAmountCompact } from '@/lib/number-format'
 import { useTradeStockForPortfolio } from '@/hooks/use-holdings'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -46,23 +47,6 @@ function formatDate(dateStr: string) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function formatCompact(v: number, curr: string): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: curr === 'IDR' ? 'IDR' : 'USD',
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(v)
-}
-
-function formatFull(v: number, curr: string): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: curr === 'IDR' ? 'IDR' : 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(v)
-}
 
 const CHART_RANGES = ['1W', '1M', '3M', 'YTD', '1Y', '5Y', 'ALL'] as const
 const CHART_LINES = [
@@ -290,10 +274,10 @@ export default function PortfoliosPage() {
                   tick={{ fontSize: 11 }}
                   width={80}
                   domain={['dataMin', 'dataMax']}
-                  tickFormatter={(v) => formatCompact(v, currency)}
+                  tickFormatter={(v) => formatAmountCompact(v)}
                 />
                 <Tooltip
-                  formatter={(v, name) => [formatFull(Number(v), currency), name]}
+                  formatter={(v, name) => [formatAmount(Number(v)), name]}
                   contentStyle={{
                     background: 'hsl(var(--popover))',
                     border: '1px solid hsl(var(--border))',
@@ -574,7 +558,7 @@ export default function PortfoliosPage() {
                     <span className="text-muted-foreground">
                       {tradeSide === 'BUY' ? 'Total cost' : 'Proceeds'}
                     </span>
-                    <span className="font-medium">{totalCost.toFixed(2)}</span>
+                    <span className="font-medium">{formatAmount(totalCost)}</span>
                   </div>
                 </div>
               )}

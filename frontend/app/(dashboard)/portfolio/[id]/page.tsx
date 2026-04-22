@@ -6,6 +6,7 @@ import { usePortfolio, usePortfolioRealized } from '@/hooks/use-portfolios'
 import { useHoldings } from '@/hooks/use-holdings'
 import { usePortfolioSnapshots } from '@/hooks/use-networth'
 import { useAmount } from '@/context/ui-settings'
+import { formatAmount, formatAmountCompact } from '@/lib/number-format'
 import { BuySellDialog } from '@/components/dialogs/buy-sell-dialog'
 import { CashFlowDialog } from '@/components/dialogs/cash-flow-dialog'
 import { DividendDialog } from '@/components/dialogs/dividend-dialog'
@@ -59,23 +60,6 @@ function formatDate(dateStr: string) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function formatCompact(v: number, curr: string): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: curr === 'IDR' ? 'IDR' : 'USD',
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(v)
-}
-
-function formatFull(v: number, curr: string): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: curr === 'IDR' ? 'IDR' : 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(v)
-}
 
 export default function PortfolioPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -309,10 +293,10 @@ export default function PortfolioPage({ params }: { params: Promise<{ id: string
                   tick={{ fontSize: 11 }}
                   width={80}
                   domain={['dataMin', 'dataMax']}
-                  tickFormatter={(v) => formatCompact(v, portfolio.currency)}
+                  tickFormatter={(v) => formatAmountCompact(v)}
                 />
                 <Tooltip
-                  formatter={(v, name) => [formatFull(Number(v), portfolio.currency), name]}
+                  formatter={(v, name) => [formatAmount(Number(v)), name]}
                   contentStyle={{
                     background: 'hsl(var(--popover))',
                     border: '1px solid hsl(var(--border))',

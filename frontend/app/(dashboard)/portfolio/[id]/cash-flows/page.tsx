@@ -3,6 +3,7 @@
 import { use } from 'react'
 import Link from 'next/link'
 import { useCashFlows } from '@/hooks/use-holdings'
+import { formatAmount } from '@/lib/number-format'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -52,12 +53,12 @@ export default function CashFlowsPage({ params }: { params: Promise<{ id: string
                   </span>
                 </div>
                 <p className="text-sm">
-                  <span className="font-medium">{parseFloat(cf.source_amount).toLocaleString()} {cf.source_currency}</span>
+                  <span className="font-medium">{formatAmount(cf.source_amount)} {cf.source_currency}</span>
                   <span className="text-muted-foreground mx-2">→</span>
-                  <span className="font-medium">{parseFloat(cf.target_amount).toFixed(4)} {cf.target_currency}</span>
+                  <span className="font-medium">{formatAmount(cf.target_amount, 4)} {cf.target_currency}</span>
                 </p>
                 {cf.broker_rate && (
-                  <p className="text-xs text-muted-foreground">Rate: {parseFloat(cf.broker_rate).toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">Rate: {formatAmount(cf.broker_rate, 4)}</p>
                 )}
               </div>
             ))}
@@ -86,13 +87,13 @@ export default function CashFlowsPage({ params }: { params: Promise<{ id: string
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    {parseFloat(cf.source_amount).toLocaleString()} {cf.source_currency}
+                    {formatAmount(cf.source_amount)} {cf.source_currency}
                   </TableCell>
                   <TableCell className="text-right">
-                    {parseFloat(cf.target_amount).toFixed(4)} {cf.target_currency}
+                    {formatAmount(cf.target_amount, 4)} {cf.target_currency}
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground">
-                    {cf.broker_rate ? parseFloat(cf.broker_rate).toLocaleString() : '—'}
+                    {cf.broker_rate ? formatAmount(cf.broker_rate, 4) : '—'}
                   </TableCell>
                 </TableRow>
               ))}

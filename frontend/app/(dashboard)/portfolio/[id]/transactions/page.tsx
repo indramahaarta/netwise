@@ -3,6 +3,7 @@
 import { use, useState } from 'react'
 import Link from 'next/link'
 import { useTransactions } from '@/hooks/use-holdings'
+import { formatAmount } from '@/lib/number-format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -92,13 +93,13 @@ export default function TransactionsPage({ params }: { params: Promise<{ id: str
                     </span>
                   </div>
                   <p className="text-xs">
-                    {parseFloat(t.quantity).toFixed(4)} × {parseFloat(t.price).toFixed(2)} ={' '}
-                    <span className="font-medium">{parseFloat(t.total_amount).toFixed(2)}</span>
+                    {parseFloat(t.quantity).toFixed(4)} × {formatAmount(t.price, 4)} ={' '}
+                    <span className="font-medium">{formatAmount(t.total_amount)}</span>
                   </p>
                   <div className="flex gap-4 text-xs">
-                    <span className="text-muted-foreground">Fee: {parseFloat(t.fee).toFixed(2)}</span>
+                    <span className="text-muted-foreground">Fee: {formatAmount(t.fee)}</span>
                     {t.side === 'SELL' && (
-                      <span className={realizedColor}>Realized: {realized.toFixed(2)}</span>
+                      <span className={realizedColor}>Realized: {formatAmount(realized)}</span>
                     )}
                   </div>
                 </div>
@@ -133,11 +134,11 @@ export default function TransactionsPage({ params }: { params: Promise<{ id: str
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">{parseFloat(t.quantity).toFixed(4)}</TableCell>
-                  <TableCell className="text-right">{parseFloat(t.price).toFixed(4)}</TableCell>
-                  <TableCell className="text-right">{parseFloat(t.fee).toFixed(2)}</TableCell>
-                  <TableCell className="text-right">{parseFloat(t.total_amount).toFixed(2)}</TableCell>
+                  <TableCell className="text-right">{formatAmount(t.price, 4)}</TableCell>
+                  <TableCell className="text-right">{formatAmount(t.fee)}</TableCell>
+                  <TableCell className="text-right">{formatAmount(t.total_amount)}</TableCell>
                   <TableCell className={`text-right ${parseFloat(t.realized_gain) > 0 ? 'text-green-600' : parseFloat(t.realized_gain) < 0 ? 'text-destructive' : ''}`}>
-                    {t.side === 'SELL' ? parseFloat(t.realized_gain).toFixed(2) : '—'}
+                    {t.side === 'SELL' ? formatAmount(t.realized_gain) : '—'}
                   </TableCell>
                 </TableRow>
               ))}

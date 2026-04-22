@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useAddDividend } from '@/hooks/use-holdings'
+import { formatNumberInput, formatNumberBlur, parseNumberInput } from '@/lib/number-format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,7 +33,7 @@ export function DividendDialog({ portfolioId, portfolioCurrency, open, onClose }
     try {
       await addDividend.mutateAsync({
         symbol,
-        amount: parseFloat(amount),
+        amount: parseNumberInput(amount),
         currency: portfolioCurrency,
       })
       setSymbol('')
@@ -63,12 +64,11 @@ export function DividendDialog({ portfolioId, portfolioCurrency, open, onClose }
           <div className="space-y-2">
             <Label>Amount ({portfolioCurrency})</Label>
             <Input
-              type="number"
-              step="any"
-              min="0"
+              type="text"
               inputMode="decimal"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => setAmount(formatNumberInput(e.target.value))}
+              onBlur={() => setAmount(formatNumberBlur(amount))}
               required
             />
           </div>

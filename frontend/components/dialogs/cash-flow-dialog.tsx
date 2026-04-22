@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useWallets, useWalletPortfolioDeposit, useWalletPortfolioWithdraw } from '@/hooks/use-wallets'
+import { formatAmount, formatNumberInput, formatNumberBlur, parseNumberInput } from '@/lib/number-format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -34,8 +35,8 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
 
   const convertedAmount = amount && brokerRate
     ? type === 'DEPOSIT'
-      ? (parseFloat(amount) / parseFloat(brokerRate)).toFixed(4)
-      : (parseFloat(amount) * parseFloat(brokerRate)).toFixed(0)
+      ? (parseNumberInput(amount) / parseNumberInput(brokerRate)).toFixed(4)
+      : (parseNumberInput(amount) * parseNumberInput(brokerRate)).toFixed(0)
     : null
 
   function handleClose() {
@@ -58,15 +59,15 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
         await deposit.mutateAsync({
           walletId: parseInt(walletId),
           portfolioId: Number(portfolioId),
-          sourceAmount: parseFloat(amount),
-          brokerRate: parseFloat(brokerRate),
+          sourceAmount: parseNumberInput(amount),
+          brokerRate: parseNumberInput(brokerRate),
         })
       } else {
         await withdraw.mutateAsync({
           walletId: parseInt(walletId),
           portfolioId: Number(portfolioId),
-          targetAmount: parseFloat(amount),
-          brokerRate: parseFloat(brokerRate),
+          targetAmount: parseNumberInput(amount),
+          brokerRate: parseNumberInput(brokerRate),
         })
       }
       handleClose()
@@ -111,7 +112,7 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
                 {(wallets ?? []).map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.name} — {w.balance !== undefined
-                      ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(parseFloat(w.balance ?? '0'))
+                      ? `Rp ${formatAmount(w.balance ?? '0', 0)}`
                       : w.currency}
                   </option>
                 ))}
@@ -124,12 +125,11 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
                 {type === 'DEPOSIT' ? 'Amount (IDR)' : `Amount (${portfolioCurrency})`}
               </Label>
               <Input
-                type="number"
-                step="any"
-                min="0"
+                type="text"
                 inputMode="decimal"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => setAmount(formatNumberInput(e.target.value))}
+                onBlur={() => setAmount(formatNumberBlur(amount))}
                 required
               />
             </div>
@@ -138,13 +138,12 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
             <div className="space-y-2">
               <Label>Broker Rate (IDR per {portfolioCurrency})</Label>
               <Input
-                type="number"
-                step="any"
-                min="0"
+                type="text"
                 inputMode="decimal"
-                placeholder="e.g. 16000"
+                placeholder="e.g. 16.000,00"
                 value={brokerRate}
-                onChange={(e) => setBrokerRate(e.target.value)}
+                onChange={(e) => setBrokerRate(formatNumberInput(e.target.value))}
+                onBlur={() => setBrokerRate(formatNumberBlur(brokerRate))}
                 required
               />
             </div>
@@ -160,8 +159,8 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
                   </span>
                   <span className="font-medium">
                     {type === 'DEPOSIT'
-                      ? `${convertedAmount} ${portfolioCurrency}`
-                      : `Rp ${parseInt(convertedAmount).toLocaleString('id-ID')}`}
+                      ? `${formatAmount(convertedAmount, 4)} ${portfolioCurrency}`
+                      : `Rp ${formatAmount(parseInt(convertedAmount ?? '0'), 0)}`}
                   </span>
                 </div>
               </div>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { format } from 'date-fns'
 import { useBuyStock, useSellStock } from '@/hooks/use-holdings'
 import { useStockSearch } from '@/hooks/use-networth'
+import { formatAmount, formatNumberInput, formatNumberBlur, parseNumberInput } from '@/lib/number-format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -44,8 +45,8 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
   const { data: searchResults, isLoading: isSearching } = useStockSearch(searchQuery, market)
 
   const totalCost =
-    parseFloat(quantity || '0') * parseFloat(price || '0') +
-    (side === 'BUY' ? parseFloat(fee || '0') : -parseFloat(fee || '0'))
+    parseNumberInput(quantity || '0') * parseNumberInput(price || '0') +
+    (side === 'BUY' ? parseNumberInput(fee || '0') : -parseNumberInput(fee || '0'))
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -53,9 +54,9 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
     try {
       await mutation.mutateAsync({
         symbol,
-        quantity: parseFloat(quantity),
-        price: parseFloat(price),
-        fee: parseFloat(fee || '0'),
+        quantity: parseNumberInput(quantity),
+        price: parseNumberInput(price),
+        fee: parseNumberInput(fee || '0'),
         transaction_time: format(txDate, 'yyyy-MM-dd'),
       })
       setSymbol('')
@@ -125,24 +126,22 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
             <div className="space-y-2">
               <Label>Quantity</Label>
               <Input
-                type="number"
-                step="any"
-                min="0"
+                type="text"
                 inputMode="decimal"
                 value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
+                onChange={(e) => setQuantity(formatNumberInput(e.target.value))}
+                onBlur={() => setQuantity(formatNumberBlur(quantity))}
                 required
               />
             </div>
             <div className="space-y-2">
               <Label>Price</Label>
               <Input
-                type="number"
-                step="any"
-                min="0"
+                type="text"
                 inputMode="decimal"
                 value={price}
-                onChange={(e) => setPrice(e.target.value)}
+                onChange={(e) => setPrice(formatNumberInput(e.target.value))}
+                onBlur={() => setPrice(formatNumberBlur(price))}
                 required
               />
             </div>
@@ -164,12 +163,11 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
           <div className="space-y-2">
             <Label>Fee</Label>
             <Input
-              type="number"
-              step="any"
-              min="0"
+              type="text"
               inputMode="decimal"
               value={fee}
-              onChange={(e) => setFee(e.target.value)}
+              onChange={(e) => setFee(formatNumberInput(e.target.value))}
+              onBlur={() => setFee(formatNumberBlur(fee))}
             />
           </div>
           {quantity && price && (
@@ -178,7 +176,7 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
                 <span className="text-muted-foreground">
                   {side === 'BUY' ? 'Total cost' : 'Proceeds'}
                 </span>
-                <span className="font-medium">{totalCost.toFixed(2)}</span>
+                <span className="font-medium">{formatAmount(totalCost)}</span>
               </div>
             </div>
           )}

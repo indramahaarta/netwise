@@ -4,6 +4,7 @@ import { use, useState } from 'react'
 import Link from 'next/link'
 import { useDividends } from '@/hooks/use-holdings'
 import { usePortfolio } from '@/hooks/use-portfolios'
+import { formatAmount } from '@/lib/number-format'
 import { DividendDialog } from '@/components/dialogs/dividend-dialog'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -42,7 +43,7 @@ export default function DividendsPage({ params }: { params: Promise<{ id: string
 
       {(dividends || []).length > 0 && (
         <p className="text-sm text-muted-foreground">
-          Total: <span className="font-semibold text-foreground">{total.toFixed(2)} {portfolio?.currency}</span>
+          Total: <span className="font-semibold text-foreground">{formatAmount(total)} {portfolio?.currency}</span>
         </p>
       )}
 
@@ -65,7 +66,7 @@ export default function DividendsPage({ params }: { params: Promise<{ id: string
                   </p>
                 </div>
                 <p className="text-sm font-medium text-green-600">
-                  +{parseFloat(d.amount).toFixed(4)} {d.currency}
+                  +{formatAmount(d.amount, 4)} {d.currency}
                 </p>
               </div>
             ))}
@@ -89,7 +90,7 @@ export default function DividendsPage({ params }: { params: Promise<{ id: string
                   </TableCell>
                   <TableCell className="font-medium">{d.symbol}</TableCell>
                   <TableCell className="text-right text-green-600">
-                    +{parseFloat(d.amount).toFixed(4)}
+                    +{formatAmount(d.amount, 4)}
                   </TableCell>
                   <TableCell>{d.currency}</TableCell>
                 </TableRow>

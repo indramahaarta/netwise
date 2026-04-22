@@ -4,6 +4,7 @@ import { use, useState } from 'react'
 import Link from 'next/link'
 import { useFees } from '@/hooks/use-holdings'
 import { usePortfolio } from '@/hooks/use-portfolios'
+import { formatAmount } from '@/lib/number-format'
 import { FeeDialog } from '@/components/dialogs/fee-dialog'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -42,7 +43,7 @@ export default function FeesPage({ params }: { params: Promise<{ id: string }> }
 
       {(fees || []).length > 0 && (
         <p className="text-sm text-muted-foreground">
-          Total: <span className="font-semibold text-destructive">-{total.toFixed(2)} {portfolio?.currency}</span>
+          Total: <span className="font-semibold text-destructive">-{formatAmount(total)} {portfolio?.currency}</span>
         </p>
       )}
 
@@ -65,7 +66,7 @@ export default function FeesPage({ params }: { params: Promise<{ id: string }> }
                   </p>
                 </div>
                 <p className="text-sm font-medium text-destructive">
-                  -{parseFloat(f.amount).toFixed(4)} {portfolio?.currency}
+                  -{formatAmount(f.amount, 4)} {portfolio?.currency}
                 </p>
               </div>
             ))}
@@ -89,7 +90,7 @@ export default function FeesPage({ params }: { params: Promise<{ id: string }> }
                   </TableCell>
                   <TableCell className="text-muted-foreground">{f.note || '—'}</TableCell>
                   <TableCell className="text-right text-destructive">
-                    -{parseFloat(f.amount).toFixed(4)}
+                    -{formatAmount(f.amount, 4)}
                   </TableCell>
                   <TableCell>{portfolio?.currency}</TableCell>
                 </TableRow>

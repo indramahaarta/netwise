@@ -20,6 +20,8 @@ import {
 } from '@/hooks/use-wallets'
 import { useWallets, useCreateWalletCategory } from '@/hooks/use-wallets'
 import { usePortfolios } from '@/hooks/use-portfolios'
+import { formatAmount, formatAmountCompact, formatNumberInput, formatNumberBlur, parseNumberInput } from '@/lib/number-format'
+import { useAmount } from '@/context/ui-settings'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,26 +36,6 @@ import {
 } from 'recharts'
 import { ArrowLeft, TrendingUp, TrendingDown, ArrowLeftRight, Building2, Wallet, Plus, ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from 'lucide-react'
 import type { WalletTransaction } from '@/lib/types'
-
-function fmtIDR(value: string | number | undefined, decimals = 0) {
-  const num = parseFloat(String(value ?? '0'))
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(num)
-}
-
-function fmtIDRCompact(value: string | number | undefined) {
-  const num = parseFloat(String(value ?? '0'))
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(num)
-}
 
 function fmtDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', {
@@ -100,6 +82,7 @@ const COLORS = ['#ef4444', '#10b981', '#f59e0b', '#06b6d4', '#8b5cf6', '#ec4899'
 export default function WalletDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
+  const fmtAmt = useAmount()
 
   const { data: wallet, isLoading: wLoading } = useWallet(id)
   const { data: categories } = useWalletCategories()
@@ -224,7 +207,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!amount || parseFloat(amount) <= 0 || !action) return
+    if (!amount || parseNumberInput(amount) <= 0 || !action) return
     if ((action === 'income' || action === 'expense') && !categoryId) return
     if (action === 'transfer' && !toWalletId) return
     setSaving(true)
@@ -233,7 +216,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
       if (action === 'income' || action === 'expense') {
         const txData = {
           type: action === 'income' ? 'INCOME' as const : 'EXPENSE' as const,
-          amount: parseFloat(amount),
+          amount: parseNumberInput(amount),
           category_id: parseInt(categoryId),
           note,
           transaction_time: format(txDate, 'yyyy-MM-dd'),
@@ -247,7 +230,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
         await transferWallets.mutateAsync({
           from_wallet_id: parseInt(id),
           to_wallet_id: parseInt(toWalletId),
-          amount: parseFloat(amount),
+          amount: parseNumberInput(amount),
           note,
         })
       }
@@ -334,7 +317,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
       <Card>
         <CardContent className="pt-6 pb-6">
           <p className="text-xs text-muted-foreground">Current Balance</p>
-          <p className="text-3xl font-bold mt-1">{fmtIDR(wallet.balance)}</p>
+          <p className="text-3xl font-bold mt-1">{fmtAmt(wallet.balance ?? '0', 'IDR')}</p>
         </CardContent>
       </Card>
 
@@ -470,16 +453,16 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
             <div className="border-t pt-4 space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Income</span>
-                <span className="text-sm font-medium text-green-600">{fmtIDR(summary.income, 2)}</span>
+                <span className="text-sm font-medium text-green-600">{fmtAmt(summary.income, 'IDR')}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Expense</span>
-                <span className="text-sm font-medium text-destructive">{fmtIDR(summary.expense, 2)}</span>
+                <span className="text-sm font-medium text-destructive">{fmtAmt(summary.expense, 'IDR')}</span>
               </div>
               <div className="flex justify-between items-center border-t pt-2">
                 <span className="text-sm font-medium">Net</span>
                 <span className={`text-sm font-semibold ${parseFloat(summary.net) >= 0 ? 'text-green-600' : 'text-destructive'}`}>
-                  {fmtIDR(summary.net, 2)}
+                  {fmtAmt(summary.net, 'IDR')}
                 </span>
               </div>
             </div>
@@ -493,7 +476,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                 <div key={cat.category_id} className="flex items-center justify-between">
                   <span className="text-sm">{cat.category_name}</span>
                   <span className={`text-sm font-medium ${cat.category_type === 'INCOME' ? 'text-green-600' : 'text-destructive'}`}>
-                    {cat.category_type === 'EXPENSE' ? '-' : '+'}{fmtIDR(cat.total, 2)}
+                    {cat.category_type === 'EXPENSE' ? '-' : '+'}{fmtAmt(cat.total, 'IDR')}
                   </span>
                 </div>
               ))}
@@ -577,7 +560,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                       {tx.note && <p className="text-xs text-muted-foreground mt-0.5">{tx.note}</p>}
                     </div>
                     <p className={`text-sm font-semibold ${txColor(tx)}`}>
-                      {txSign(tx)}{fmtIDR(tx.amount, 2)}
+                      {txSign(tx)}{fmtAmt(tx.amount, 'IDR')}
                     </p>
                   </div>
                 </div>
@@ -600,8 +583,8 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                 <BarChart data={incomeExpenseData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: any) => fmtIDRCompact(v)} />
-                  <Tooltip formatter={(v: any) => fmtIDR(v, 2)} contentStyle={tooltipStyle} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: any) => formatAmountCompact(v)} />
+                  <Tooltip formatter={(v: any) => fmtAmt(v, 'IDR')} contentStyle={tooltipStyle} />
                   <Bar dataKey="value" radius={[8, 8, 0, 0]}>
                     {incomeExpenseData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.name === 'Income' ? '#10b981' : '#ef4444'} />
@@ -623,9 +606,9 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={categoryData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v: any) => fmtIDRCompact(v)} />
+                  <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v: any) => formatAmountCompact(v)} />
                   <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} />
-                  <Tooltip formatter={(v: any) => fmtIDR(v, 2)} contentStyle={tooltipStyle} />
+                  <Tooltip formatter={(v: any) => fmtAmt(v, 'IDR')} contentStyle={tooltipStyle} />
                   <Bar dataKey="value" radius={[0, 8, 8, 0]}>
                     {categoryData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -717,13 +700,12 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                 <div className="space-y-1.5">
                   <Label>Amount (IDR)</Label>
                   <Input
-                    type="number"
-                    step="any"
-                    min="0"
+                    type="text"
                     inputMode="decimal"
                     placeholder="0"
                     value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
+                    onChange={(e) => setAmount(formatNumberInput(e.target.value))}
+                    onBlur={() => setAmount(formatNumberBlur(amount))}
                     required
                   />
                 </div>

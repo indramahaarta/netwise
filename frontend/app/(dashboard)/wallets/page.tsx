@@ -13,6 +13,8 @@ import {
   useWalletCategories,
   useAddWalletTransactionForWallet,
 } from '@/hooks/use-wallets'
+import { formatAmount, formatAmountCompact, formatNumberInput, formatNumberBlur, parseNumberInput } from '@/lib/number-format'
+import { useAmount } from '@/context/ui-settings'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,27 +38,8 @@ const tooltipStyle = {
   fontSize: 12,
 }
 
-function fmtIDR(value: string | number | undefined, decimals = 0) {
-  const num = parseFloat(String(value ?? '0'))
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(num)
-}
-
-function fmtIDRCompact(value: string | number | undefined) {
-  const num = parseFloat(String(value ?? '0'))
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(num)
-}
-
 export default function WalletsPage() {
+  const fmtAmt = useAmount()
   const { data: wallets, isLoading } = useWallets()
   const { data: allCategories } = useWalletCategories()
   const [chartRange, setChartRange] = useState('1W')
@@ -194,7 +177,7 @@ export default function WalletsPage() {
         <Card>
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground">Total Wallet Balance</p>
-            <p className="text-2xl font-bold mt-1">{fmtIDR(totalBalance)}</p>
+            <p className="text-2xl font-bold mt-1">{fmtAmt(totalBalance, 'IDR')}</p>
           </CardContent>
         </Card>
       )}
@@ -229,16 +212,8 @@ export default function WalletsPage() {
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: any) => {
-                    const num = parseFloat(String(v ?? '0'))
-                    return new Intl.NumberFormat('id-ID', {
-                      style: 'currency',
-                      currency: 'IDR',
-                      notation: 'compact',
-                      maximumFractionDigits: 1,
-                    }).format(num)
-                  }} />
-                  <Tooltip formatter={(v: any) => fmtIDR(v)} contentStyle={tooltipStyle} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: any) => formatAmountCompact(v)} />
+                  <Tooltip formatter={(v: any) => fmtAmt(v, 'IDR')} contentStyle={tooltipStyle} />
                   <Line type="monotone" dataKey="balance" stroke="#3b82f6" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
@@ -359,8 +334,8 @@ export default function WalletsPage() {
                   <BarChart data={incomeExpenseData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: any) => fmtIDRCompact(v)} />
-                    <Tooltip formatter={(v: any) => fmtIDR(v, 2)} contentStyle={tooltipStyle} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: any) => formatAmountCompact(v)} />
+                    <Tooltip formatter={(v: any) => fmtAmt(v, 'IDR')} contentStyle={tooltipStyle} />
                     <Bar dataKey="value" radius={[8, 8, 0, 0]}>
                       {incomeExpenseData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.name === 'Income' ? '#10b981' : '#ef4444'} />
@@ -384,9 +359,9 @@ export default function WalletsPage() {
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={categoryData} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v: any) => fmtIDRCompact(v)} />
+                    <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v: any) => formatAmountCompact(v)} />
                     <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} />
-                    <Tooltip formatter={(v: any) => fmtIDR(v, 2)} contentStyle={tooltipStyle} />
+                    <Tooltip formatter={(v: any) => fmtAmt(v, 'IDR')} contentStyle={tooltipStyle} />
                     <Bar dataKey="value" radius={[0, 8, 8, 0]}>
                       {categoryData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -437,7 +412,7 @@ export default function WalletsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <p className="text-base font-semibold">{fmtIDR(w.balance)}</p>
+                      <p className="text-base font-semibold">{fmtAmt(w.balance ?? '0', 'IDR')}</p>
                       <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     </div>
                   </div>
@@ -538,13 +513,12 @@ export default function WalletsPage() {
               <div className="space-y-1.5">
                 <Label>Amount (IDR)</Label>
                 <Input
-                  type="number"
-                  step="any"
-                  min="0"
+                  type="text"
                   inputMode="decimal"
                   placeholder="0"
                   value={txAmount}
-                  onChange={(e) => setTxAmount(e.target.value)}
+                  onChange={(e) => setTxAmount(formatNumberInput(e.target.value))}
+                  onBlur={() => setTxAmount(formatNumberBlur(txAmount))}
                   required
                 />
               </div>
@@ -629,7 +603,7 @@ export default function WalletsPage() {
                     await addTx.mutateAsync({
                       walletId: parseInt(txWalletId),
                       type: txAction === 'income' ? 'INCOME' : 'EXPENSE',
-                      amount: parseFloat(txAmount),
+                      amount: parseNumberInput(txAmount),
                       category_id: parseInt(txCategoryId),
                       note: txNote || undefined,
                       transaction_time: format(txDate, 'yyyy-MM-dd'),

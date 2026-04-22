@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useAddFee } from '@/hooks/use-holdings'
+import { formatNumberInput, formatNumberBlur, parseNumberInput } from '@/lib/number-format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -31,7 +32,7 @@ export function FeeDialog({ portfolioId, portfolioCurrency, open, onClose }: Pro
     setError('')
     try {
       await addFee.mutateAsync({
-        amount: parseFloat(amount),
+        amount: parseNumberInput(amount),
         note: note || undefined,
       })
       setAmount('')
@@ -53,12 +54,11 @@ export function FeeDialog({ portfolioId, portfolioCurrency, open, onClose }: Pro
           <div className="space-y-2">
             <Label>Amount ({portfolioCurrency})</Label>
             <Input
-              type="number"
-              step="any"
-              min="0"
+              type="text"
               inputMode="decimal"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => setAmount(formatNumberInput(e.target.value))}
+              onBlur={() => setAmount(formatNumberBlur(amount))}
               required
             />
           </div>

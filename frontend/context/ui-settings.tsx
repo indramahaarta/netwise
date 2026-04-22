@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState } from 'react'
+import { formatAmount } from '@/lib/number-format'
 
 interface UISettings {
   darkMode: boolean
@@ -52,6 +53,11 @@ export function UISettingsProvider({ children }: { children: React.ReactNode }) 
 
 export const useUISettings = () => useContext(UISettingsContext)
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$',
+  IDR: 'Rp',
+}
+
 /**
  * Returns a currency formatter that respects the unseen toggle.
  * When unseen is active, amounts are replaced with ••••.
@@ -61,11 +67,7 @@ export function useAmount() {
   const { unseen } = useUISettings()
   return (value: string | number, currency: string): string => {
     if (unseen) return '••••'
-    const num = typeof value === 'string' ? parseFloat(value) : value
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 2,
-    }).format(num)
+    const symbol = CURRENCY_SYMBOLS[currency] ?? currency
+    return `${symbol} ${formatAmount(value, 2)}`
   }
 }

@@ -12,6 +12,7 @@ import {
   Legend,
 } from 'recharts'
 import { useNetWorthSnapshots, usePortfolioSnapshots } from '@/hooks/use-networth'
+import { formatAmount, formatAmountCompact } from '@/lib/number-format'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { NetWorth, Portfolio, PortfolioSnapshot } from '@/lib/types'
@@ -51,22 +52,6 @@ function formatDate(dateStr: string) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function formatValue(v: number, currency: string) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(v)
-}
-
-function formatValueFull(v: number, currency: string) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 2,
-  }).format(v)
-}
 
 function isTodayCovered(points: ChartPoint[]): boolean {
   if (points.length === 0) return false
@@ -354,13 +339,13 @@ export function NetWorthChart({ currency, liveData, portfolios = [] }: Props) {
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
             <YAxis
-              tickFormatter={(v) => formatValue(v, currency)}
+              tickFormatter={(v) => formatAmountCompact(v)}
               tick={{ fontSize: 11 }}
               width={70}
               domain={['dataMin', 'dataMax']}
             />
             <Tooltip
-              formatter={(v, name) => [formatValueFull(Number(v), currency), name]}
+              formatter={(v, name) => [formatAmount(Number(v)), name]}
               contentStyle={{
                 background: 'hsl(var(--popover))',
                 border: '1px solid hsl(var(--border))',
