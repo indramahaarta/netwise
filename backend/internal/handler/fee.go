@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"time"
@@ -9,11 +10,13 @@ import (
 	"github.com/shopspring/decimal"
 
 	db "github.com/indramahaarta/netwise/internal/db/sqlc"
+	"github.com/indramahaarta/netwise/internal/service"
 )
 
 type addFeeRequest struct {
-	Amount float64 `json:"amount" binding:"required,gt=0"`
-	Note   *string `json:"note"`
+	Amount          float64 `json:"amount" binding:"required,gt=0"`
+	Note            *string `json:"note"`
+	TransactionTime *string `json:"transaction_time"`
 }
 
 func (h *Handler) AddFee(c *gin.Context) {
@@ -47,15 +50,28 @@ func (h *Handler) AddFee(c *gin.Context) {
 		note = sql.NullString{String: *req.Note, Valid: true}
 	}
 
+	txTime := time.Now()
+	if req.TransactionTime != nil {
+		if t, err := time.Parse(time.RFC3339, *req.TransactionTime); err == nil {
+			txTime = t
+		} else if t, err := time.Parse("2006-01-02", *req.TransactionTime); err == nil {
+			txTime = t
+		}
+	}
+
 	fee, err := h.queries.CreatePortfolioFee(c, db.CreatePortfolioFeeParams{
 		PortfolioID:     portfolioID,
 		Amount:          amount.StringFixed(8),
 		Note:            note,
-		TransactionTime: time.Now(),
+		TransactionTime: txTime,
 	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to record fee")
 		return
+	}
+
+	if txTime.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+		go service.RecomputePortfolioSnapshotsFrom(context.Background(), h.queries, portfolioID, txTime)
 	}
 
 	c.JSON(http.StatusCreated, gin.H{

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"time"
@@ -9,16 +10,19 @@ import (
 	"github.com/shopspring/decimal"
 
 	db "github.com/indramahaarta/netwise/internal/db/sqlc"
+	"github.com/indramahaarta/netwise/internal/service"
 )
 
 type depositRequest struct {
-	SourceAmount float64 `json:"source_amount" binding:"required,gt=0"`
-	BrokerRate   float64 `json:"broker_rate" binding:"required,gt=0"`
+	SourceAmount    float64 `json:"source_amount" binding:"required,gt=0"`
+	BrokerRate      float64 `json:"broker_rate" binding:"required,gt=0"`
+	TransactionTime *string `json:"transaction_time"`
 }
 
 type withdrawRequest struct {
-	TargetAmount float64 `json:"target_amount" binding:"required,gt=0"`
-	BrokerRate   float64 `json:"broker_rate" binding:"required,gt=0"`
+	TargetAmount    float64 `json:"target_amount" binding:"required,gt=0"`
+	BrokerRate      float64 `json:"broker_rate" binding:"required,gt=0"`
+	TransactionTime *string `json:"transaction_time"`
 }
 
 // Deposit converts IDR to the portfolio's currency and adds to cash balance.
@@ -53,6 +57,15 @@ func (h *Handler) Deposit(c *gin.Context) {
 		return
 	}
 
+	txTime := time.Now()
+	if req.TransactionTime != nil {
+		if t, err := time.Parse(time.RFC3339, *req.TransactionTime); err == nil {
+			txTime = t
+		} else if t, err := time.Parse("2006-01-02", *req.TransactionTime); err == nil {
+			txTime = t
+		}
+	}
+
 	cf, err := h.queries.CreateCashFlow(c, db.CreateCashFlowParams{
 		PortfolioID:     portfolioID,
 		Type:            "DEPOSIT",
@@ -61,11 +74,15 @@ func (h *Handler) Deposit(c *gin.Context) {
 		TargetAmount:    targetAmt.StringFixed(8),
 		TargetCurrency:  portfolio.Currency,
 		BrokerRate:      sql.NullString{String: rate.StringFixed(8), Valid: true},
-		TransactionTime: time.Now(),
+		TransactionTime: txTime,
 	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to record cash flow")
 		return
+	}
+
+	if txTime.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+		go service.RecomputePortfolioSnapshotsFrom(context.Background(), h.queries, portfolioID, txTime)
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -110,6 +127,15 @@ func (h *Handler) Withdraw(c *gin.Context) {
 		return
 	}
 
+	txTime := time.Now()
+	if req.TransactionTime != nil {
+		if t, err := time.Parse(time.RFC3339, *req.TransactionTime); err == nil {
+			txTime = t
+		} else if t, err := time.Parse("2006-01-02", *req.TransactionTime); err == nil {
+			txTime = t
+		}
+	}
+
 	cf, err := h.queries.CreateCashFlow(c, db.CreateCashFlowParams{
 		PortfolioID:     portfolioID,
 		Type:            "WITHDRAWAL",
@@ -118,11 +144,15 @@ func (h *Handler) Withdraw(c *gin.Context) {
 		TargetAmount:    sourceAmt.StringFixed(8),
 		TargetCurrency:  "IDR",
 		BrokerRate:      sql.NullString{String: rate.StringFixed(8), Valid: true},
-		TransactionTime: time.Now(),
+		TransactionTime: txTime,
 	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to record cash flow")
 		return
+	}
+
+	if txTime.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+		go service.RecomputePortfolioSnapshotsFrom(context.Background(), h.queries, portfolioID, txTime)
 	}
 
 	c.JSON(http.StatusCreated, gin.H{

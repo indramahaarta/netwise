@@ -32,3 +32,36 @@ SELECT (
 SELECT COALESCE(SUM(fee), 0)::NUMERIC AS total_fees
 FROM transaction
 WHERE portfolio_id = $1;
+
+-- name: ListTransactionsByPortfolioAsc :many
+SELECT t.*, tk.symbol, tk.currency AS ticker_currency
+FROM transaction t
+JOIN ticker tk ON tk.id = t.ticker_id
+WHERE t.portfolio_id = $1
+ORDER BY t.transaction_time ASC;
+
+-- name: SumRealizedGainByPortfolioBefore :one
+SELECT (
+    COALESCE((SELECT SUM(t.realized_gain) FROM transaction t
+              WHERE t.portfolio_id = $1 AND t.side = 'SELL' AND t.transaction_time <= $2), 0)
+  + COALESCE((SELECT SUM(d.amount) FROM dividend d
+              WHERE d.portfolio_id = $1 AND d.transaction_time <= $2), 0)
+  - COALESCE((SELECT SUM(f.amount) FROM portfolio_fee f
+              WHERE f.portfolio_id = $1 AND f.transaction_time <= $2), 0)
+)::NUMERIC AS total_realized_gain;
+
+-- name: GetPortfolioCashAsOf :one
+SELECT (
+    COALESCE((SELECT SUM(cf.target_amount) FROM cash_flow cf
+              WHERE cf.portfolio_id = $1 AND cf.type = 'DEPOSIT'    AND cf.transaction_time <= $2), 0)
+  - COALESCE((SELECT SUM(cf.source_amount) FROM cash_flow cf
+              WHERE cf.portfolio_id = $1 AND cf.type = 'WITHDRAWAL' AND cf.transaction_time <= $2), 0)
+  - COALESCE((SELECT SUM(t.total_amount) FROM transaction t
+              WHERE t.portfolio_id = $1 AND t.side = 'BUY'  AND t.transaction_time <= $2), 0)
+  + COALESCE((SELECT SUM(t.total_amount) FROM transaction t
+              WHERE t.portfolio_id = $1 AND t.side = 'SELL' AND t.transaction_time <= $2), 0)
+  + COALESCE((SELECT SUM(d.amount) FROM dividend d
+              WHERE d.portfolio_id = $1 AND d.transaction_time <= $2), 0)
+  - COALESCE((SELECT SUM(f.amount) FROM portfolio_fee f
+              WHERE f.portfolio_id = $1 AND f.transaction_time <= $2), 0)
+)::NUMERIC AS cash;

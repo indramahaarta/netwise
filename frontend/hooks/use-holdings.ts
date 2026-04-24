@@ -115,7 +115,7 @@ export function useCashFlows(portfolioId: number | string) {
 export function useDeposit(portfolioId: number | string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { source_amount: number; broker_rate: number }) =>
+    mutationFn: (data: { source_amount: number; broker_rate: number; transaction_time?: string }) =>
       api
         .post(`/api/v1/portfolios/${portfolioId}/deposit`, data)
         .then((r) => r.data),
@@ -130,7 +130,7 @@ export function useDeposit(portfolioId: number | string) {
 export function useWithdraw(portfolioId: number | string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { target_amount: number; broker_rate: number }) =>
+    mutationFn: (data: { target_amount: number; broker_rate: number; transaction_time?: string }) =>
       api
         .post(`/api/v1/portfolios/${portfolioId}/withdraw`, data)
         .then((r) => r.data),
@@ -156,7 +156,7 @@ export function useDividends(portfolioId: number | string) {
 export function useAddDividend(portfolioId: number | string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { symbol: string; amount: number; currency: string }) =>
+    mutationFn: (data: { symbol: string; amount: number; currency: string; transaction_time?: string }) =>
       api
         .post(`/api/v1/portfolios/${portfolioId}/dividends`, data)
         .then((r) => r.data),
@@ -182,7 +182,7 @@ export function useFees(portfolioId: number | string) {
 export function useAddFee(portfolioId: number | string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { amount: number; note?: string }) =>
+    mutationFn: (data: { amount: number; note?: string; transaction_time?: string }) =>
       api
         .post(`/api/v1/portfolios/${portfolioId}/fees`, data)
         .then((r) => r.data),

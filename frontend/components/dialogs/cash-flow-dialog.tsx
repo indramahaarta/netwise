@@ -2,11 +2,15 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { format } from 'date-fns'
+import { CalendarIcon } from 'lucide-react'
 import { useWallets, useWalletPortfolioDeposit, useWalletPortfolioWithdraw } from '@/hooks/use-wallets'
 import { formatAmount, formatNumberInput, formatNumberBlur, parseNumberInput } from '@/lib/number-format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Dialog,
   DialogContent,
@@ -27,6 +31,8 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
   const [amount, setAmount] = useState('')
   const [brokerRate, setBrokerRate] = useState('')
   const [error, setError] = useState('')
+  const [txDate, setTxDate] = useState<Date>(new Date())
+  const [dateOpen, setDateOpen] = useState(false)
 
   const { data: wallets } = useWallets()
   const deposit = useWalletPortfolioDeposit()
@@ -44,6 +50,7 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
     setAmount('')
     setBrokerRate('')
     setError('')
+    setTxDate(new Date())
     onClose()
   }
 
@@ -54,6 +61,7 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
       setError('Please select a wallet')
       return
     }
+    const transactionTime = format(txDate, 'yyyy-MM-dd')
     try {
       if (type === 'DEPOSIT') {
         await deposit.mutateAsync({
@@ -61,6 +69,7 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
           portfolioId: Number(portfolioId),
           sourceAmount: parseNumberInput(amount),
           brokerRate: parseNumberInput(brokerRate),
+          transactionTime,
         })
       } else {
         await withdraw.mutateAsync({
@@ -68,6 +77,7 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
           portfolioId: Number(portfolioId),
           targetAmount: parseNumberInput(amount),
           brokerRate: parseNumberInput(brokerRate),
+          transactionTime,
         })
       }
       handleClose()
@@ -146,6 +156,22 @@ export function CashFlowDialog({ portfolioId, portfolioCurrency, type, open, onC
                 onBlur={() => setBrokerRate(formatNumberBlur(brokerRate))}
                 required
               />
+            </div>
+
+            {/* Date */}
+            <div className="space-y-2">
+              <Label>Date</Label>
+              <Popover open={dateOpen} onOpenChange={setDateOpen}>
+                <PopoverTrigger>
+                  <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    <span className="text-left flex-1">{format(txDate, 'MMM d, yyyy')}</span>
+                  </div>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar mode="single" selected={txDate} onSelect={(date) => { if (date) { setTxDate(date); setDateOpen(false) } }} />
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Conversion preview */}

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -8,12 +9,14 @@ import (
 	"github.com/shopspring/decimal"
 
 	db "github.com/indramahaarta/netwise/internal/db/sqlc"
+	"github.com/indramahaarta/netwise/internal/service"
 )
 
 type addDividendRequest struct {
-	Symbol   string  `json:"symbol" binding:"required"`
-	Amount   float64 `json:"amount" binding:"required,gt=0"`
-	Currency string  `json:"currency" binding:"required"`
+	Symbol          string  `json:"symbol" binding:"required"`
+	Amount          float64 `json:"amount" binding:"required,gt=0"`
+	Currency        string  `json:"currency" binding:"required"`
+	TransactionTime *string `json:"transaction_time"`
 }
 
 func (h *Handler) AddDividend(c *gin.Context) {
@@ -48,16 +51,29 @@ func (h *Handler) AddDividend(c *gin.Context) {
 		return
 	}
 
+	txTime := time.Now()
+	if req.TransactionTime != nil {
+		if t, err := time.Parse(time.RFC3339, *req.TransactionTime); err == nil {
+			txTime = t
+		} else if t, err := time.Parse("2006-01-02", *req.TransactionTime); err == nil {
+			txTime = t
+		}
+	}
+
 	div, err := h.queries.CreateDividend(c, db.CreateDividendParams{
 		PortfolioID:     portfolioID,
 		TickerID:        ticker.ID,
 		Currency:        req.Currency,
 		Amount:          amount.StringFixed(8),
-		TransactionTime: time.Now(),
+		TransactionTime: txTime,
 	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to record dividend")
 		return
+	}
+
+	if txTime.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+		go service.RecomputePortfolioSnapshotsFrom(context.Background(), h.queries, portfolioID, txTime)
 	}
 
 	c.JSON(http.StatusCreated, gin.H{

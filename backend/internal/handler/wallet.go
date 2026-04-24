@@ -434,9 +434,10 @@ func (h *Handler) TransferBetweenWallets(c *gin.Context) {
 // --- Portfolio transfers ---
 
 type walletToPortfolioRequest struct {
-	PortfolioID  int64   `json:"portfolio_id" binding:"required"`
-	SourceAmount float64 `json:"source_amount" binding:"required,gt=0"` // IDR
-	BrokerRate   float64 `json:"broker_rate" binding:"required,gt=0"`
+	PortfolioID     int64   `json:"portfolio_id" binding:"required"`
+	SourceAmount    float64 `json:"source_amount" binding:"required,gt=0"` // IDR
+	BrokerRate      float64 `json:"broker_rate" binding:"required,gt=0"`
+	TransactionTime *string `json:"transaction_time"`
 }
 
 // WalletToPortfolio moves IDR from a wallet into a portfolio's cash.
@@ -472,6 +473,15 @@ func (h *Handler) WalletToPortfolio(c *gin.Context) {
 		return
 	}
 
+	txTime := time.Now()
+	if req.TransactionTime != nil {
+		if t, err := time.Parse(time.RFC3339, *req.TransactionTime); err == nil {
+			txTime = t
+		} else if t, err := time.Parse("2006-01-02", *req.TransactionTime); err == nil {
+			txTime = t
+		}
+	}
+
 	// Deduct from wallet
 	if _, err := h.queries.CreateWalletTransaction(c, db.CreateWalletTransactionParams{
 		WalletID:           walletID,
@@ -482,7 +492,7 @@ func (h *Handler) WalletToPortfolio(c *gin.Context) {
 		RelatedPortfolioID: sql.NullInt64{Int64: req.PortfolioID, Valid: true},
 		BrokerRate:         sql.NullString{String: rate.StringFixed(8), Valid: true},
 		Note:               sql.NullString{},
-		TransactionTime:    time.Now(),
+		TransactionTime:    txTime,
 	}); err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to record wallet transaction")
 		return
@@ -508,7 +518,7 @@ func (h *Handler) WalletToPortfolio(c *gin.Context) {
 		TargetAmount:    targetAmt.StringFixed(8),
 		TargetCurrency:  portfolio.Currency,
 		BrokerRate:      sql.NullString{String: rate.StringFixed(8), Valid: true},
-		TransactionTime: time.Now(),
+		TransactionTime: txTime,
 	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to record cash flow")
@@ -516,6 +526,10 @@ func (h *Handler) WalletToPortfolio(c *gin.Context) {
 	}
 
 	service.InvalidateUserWalletSnapshots(userID)
+	if txTime.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+		go service.RecomputeWalletSnapshotsFrom(context.Background(), h.queries, walletID, txTime)
+		go service.RecomputePortfolioSnapshotsFrom(context.Background(), h.queries, req.PortfolioID, txTime)
+	}
 	c.JSON(http.StatusCreated, gin.H{
 		"cash_flow":    cf,
 		"cash_balance": newCash.StringFixed(2),
@@ -523,9 +537,10 @@ func (h *Handler) WalletToPortfolio(c *gin.Context) {
 }
 
 type portfolioToWalletRequest struct {
-	PortfolioID  int64   `json:"portfolio_id" binding:"required"`
-	TargetAmount float64 `json:"target_amount" binding:"required,gt=0"` // portfolio currency units
-	BrokerRate   float64 `json:"broker_rate" binding:"required,gt=0"`
+	PortfolioID     int64   `json:"portfolio_id" binding:"required"`
+	TargetAmount    float64 `json:"target_amount" binding:"required,gt=0"` // portfolio currency units
+	BrokerRate      float64 `json:"broker_rate" binding:"required,gt=0"`
+	TransactionTime *string `json:"transaction_time"`
 }
 
 // PortfolioToWallet moves cash from a portfolio back to a wallet in IDR.
@@ -561,6 +576,15 @@ func (h *Handler) PortfolioToWallet(c *gin.Context) {
 		return
 	}
 
+	txTime := time.Now()
+	if req.TransactionTime != nil {
+		if t, err := time.Parse(time.RFC3339, *req.TransactionTime); err == nil {
+			txTime = t
+		} else if t, err := time.Parse("2006-01-02", *req.TransactionTime); err == nil {
+			txTime = t
+		}
+	}
+
 	// Deduct from portfolio cash
 	newCash := currentCash.Sub(targetAmt)
 	if _, err := h.queries.UpdatePortfolioCash(c, db.UpdatePortfolioCashParams{
@@ -580,7 +604,7 @@ func (h *Handler) PortfolioToWallet(c *gin.Context) {
 		TargetAmount:    idrAmt.StringFixed(8),
 		TargetCurrency:  "IDR",
 		BrokerRate:      sql.NullString{String: rate.StringFixed(8), Valid: true},
-		TransactionTime: time.Now(),
+		TransactionTime: txTime,
 	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to record cash flow")
@@ -597,13 +621,17 @@ func (h *Handler) PortfolioToWallet(c *gin.Context) {
 		RelatedPortfolioID: sql.NullInt64{Int64: req.PortfolioID, Valid: true},
 		BrokerRate:         sql.NullString{String: rate.StringFixed(8), Valid: true},
 		Note:               sql.NullString{},
-		TransactionTime:    time.Now(),
+		TransactionTime:    txTime,
 	}); err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to record wallet transaction")
 		return
 	}
 
 	service.InvalidateUserWalletSnapshots(userID)
+	if txTime.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+		go service.RecomputeWalletSnapshotsFrom(context.Background(), h.queries, walletID, txTime)
+		go service.RecomputePortfolioSnapshotsFrom(context.Background(), h.queries, req.PortfolioID, txTime)
+	}
 	c.JSON(http.StatusCreated, gin.H{
 		"cash_flow":    cf,
 		"cash_balance": newCash.StringFixed(2),

@@ -250,6 +250,136 @@ func decimalFromString(s string) decimal.Decimal {
 	return d
 }
 
+// RecomputePortfolioSnapshotsFrom recomputes portfolio_snapshot and ticker_snapshot
+// rows for portfolioID from startDate through yesterday (UTC). Called after any
+// backdated portfolio mutation (buy, sell, deposit, withdraw, fee, dividend,
+// wallet transfer) so affected snapshot rows stay accurate.
+//
+// Holdings are rebuilt by chronological replay of the transaction table. Cash
+// and realized gain come from server-side aggregates. Equity uses Yahoo
+// historical close prices with avg-cost fallback.
+func RecomputePortfolioSnapshotsFrom(ctx context.Context, queries *db.Queries, portfolioID int64, startDate time.Time) {
+	yesterday := time.Now().UTC().Truncate(24 * time.Hour).Add(-24 * time.Hour)
+	d := startDate.UTC().Truncate(24 * time.Hour)
+	if d.After(yesterday) {
+		return
+	}
+
+	p, err := queries.GetPortfolio(ctx, portfolioID)
+	if err != nil {
+		log.Printf("recompute portfolio snapshots: portfolio %d not found: %v", portfolioID, err)
+		return
+	}
+
+	txs, err := queries.ListTransactionsByPortfolioAsc(ctx, portfolioID)
+	if err != nil {
+		log.Printf("recompute portfolio snapshots: list transactions: %v", err)
+		return
+	}
+
+	type holdingState struct {
+		shares, avg      decimal.Decimal
+		symbol, currency string
+	}
+	holdings := map[int64]*holdingState{}
+	cursor := 0
+
+	for !d.After(yesterday) {
+		endOfDay := d.Add(24*time.Hour - time.Nanosecond)
+
+		// Advance replay cursor through transactions that happened on or before endOfDay.
+		for cursor < len(txs) && !txs[cursor].TransactionTime.After(endOfDay) {
+			t := txs[cursor]
+			qty := decimalFromString(t.Quantity)
+			price := decimalFromString(t.Price)
+			h, ok := holdings[t.TickerID]
+			if !ok {
+				h = &holdingState{symbol: t.Symbol, currency: t.TickerCurrency}
+				holdings[t.TickerID] = h
+			}
+			switch t.Side {
+			case "BUY":
+				newShares := h.shares.Add(qty)
+				if newShares.IsPositive() {
+					h.avg = h.shares.Mul(h.avg).Add(qty.Mul(price)).Div(newShares)
+				}
+				h.shares = newShares
+			case "SELL":
+				h.shares = h.shares.Sub(qty)
+			}
+			cursor++
+		}
+
+		cashStr, err := queries.GetPortfolioCashAsOf(ctx, db.GetPortfolioCashAsOfParams{
+			PortfolioID:     portfolioID,
+			TransactionTime: endOfDay,
+		})
+		if err != nil {
+			log.Printf("recompute portfolio %d date %s cash: %v", portfolioID, d.Format("2006-01-02"), err)
+			d = d.Add(24 * time.Hour)
+			continue
+		}
+		realizedStr, err := queries.SumRealizedGainByPortfolioBefore(ctx, db.SumRealizedGainByPortfolioBeforeParams{
+			PortfolioID:     portfolioID,
+			TransactionTime: endOfDay,
+		})
+		if err != nil {
+			log.Printf("recompute portfolio %d date %s realized: %v", portfolioID, d.Format("2006-01-02"), err)
+			d = d.Add(24 * time.Hour)
+			continue
+		}
+
+		totalEquity := decimal.Zero
+		totalInvested := decimal.Zero
+		for tickerID, h := range holdings {
+			if !h.shares.IsPositive() {
+				continue
+			}
+			invested := h.shares.Mul(h.avg)
+			totalInvested = totalInvested.Add(invested)
+
+			var livePrice decimal.Decimal
+			if price, err := GetHistoricalClosePrice(h.symbol, d); err == nil && price > 0 {
+				livePrice = decimal.NewFromFloat(price)
+			}
+			if livePrice.IsZero() {
+				livePrice = h.avg
+			}
+			marketValue := h.shares.Mul(livePrice)
+			totalEquity = totalEquity.Add(marketValue)
+
+			if _, err := queries.UpsertTickerSnapshot(ctx, db.UpsertTickerSnapshotParams{
+				PortfolioID:  portfolioID,
+				TickerID:     tickerID,
+				Price:        livePrice.StringFixed(8),
+				Currency:     h.currency,
+				Quantity:     h.shares.StringFixed(8),
+				Avg:          h.avg.StringFixed(8),
+				MarketValue:  marketValue.StringFixed(8),
+				SnapshotDate: d,
+			}); err != nil {
+				log.Printf("recompute ticker snapshot portfolio %d ticker %d date %s: %v", portfolioID, tickerID, d.Format("2006-01-02"), err)
+			}
+		}
+
+		unrealized := totalEquity.Sub(totalInvested)
+		if _, err := queries.UpsertPortfolioSnapshot(ctx, db.UpsertPortfolioSnapshotParams{
+			PortfolioID:   portfolioID,
+			TotalEquity:   totalEquity.StringFixed(8),
+			TotalInvested: totalInvested.StringFixed(8),
+			CashBalance:   decimalFromString(cashStr).StringFixed(8),
+			Unrealized:    unrealized.StringFixed(8),
+			Realized:      decimalFromString(realizedStr).StringFixed(8),
+			Currency:      p.Currency,
+			SnapshotDate:  d,
+		}); err != nil {
+			log.Printf("recompute portfolio snapshot portfolio %d date %s: %v", portfolioID, d.Format("2006-01-02"), err)
+		}
+
+		d = d.Add(24 * time.Hour)
+	}
+}
+
 // RecomputeWalletSnapshotsFrom recomputes wallet_snapshot rows for walletID
 // from startDate through yesterday (UTC). Called after a backdated transaction
 // is added, updated, or deleted so all affected snapshot rows stay accurate.

@@ -151,13 +151,14 @@ export function usePortfolioToWallet(id: string | number) {
 export function useWalletPortfolioDeposit() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ walletId, portfolioId, sourceAmount, brokerRate }: {
-      walletId: number; portfolioId: number; sourceAmount: number; brokerRate: number
+    mutationFn: ({ walletId, portfolioId, sourceAmount, brokerRate, transactionTime }: {
+      walletId: number; portfolioId: number; sourceAmount: number; brokerRate: number; transactionTime?: string
     }) =>
       api.post(`/api/v1/wallets/${walletId}/portfolio-deposit`, {
         portfolio_id: portfolioId,
         source_amount: sourceAmount,
         broker_rate: brokerRate,
+        ...(transactionTime ? { transaction_time: transactionTime } : {}),
       }).then((r) => r.data),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['wallets'] })
@@ -172,13 +173,14 @@ export function useWalletPortfolioDeposit() {
 export function useWalletPortfolioWithdraw() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ walletId, portfolioId, targetAmount, brokerRate }: {
-      walletId: number; portfolioId: number; targetAmount: number; brokerRate: number
+    mutationFn: ({ walletId, portfolioId, targetAmount, brokerRate, transactionTime }: {
+      walletId: number; portfolioId: number; targetAmount: number; brokerRate: number; transactionTime?: string
     }) =>
       api.post(`/api/v1/wallets/${walletId}/portfolio-withdraw`, {
         portfolio_id: portfolioId,
         target_amount: targetAmount,
         broker_rate: brokerRate,
+        ...(transactionTime ? { transaction_time: transactionTime } : {}),
       }).then((r) => r.data),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['wallets'] })

@@ -56,6 +56,35 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 	return i, err
 }
 
+const getPortfolioCashAsOf = `-- name: GetPortfolioCashAsOf :one
+SELECT (
+    COALESCE((SELECT SUM(cf.target_amount) FROM cash_flow cf
+              WHERE cf.portfolio_id = $1 AND cf.type = 'DEPOSIT'    AND cf.transaction_time <= $2), 0)
+  - COALESCE((SELECT SUM(cf.source_amount) FROM cash_flow cf
+              WHERE cf.portfolio_id = $1 AND cf.type = 'WITHDRAWAL' AND cf.transaction_time <= $2), 0)
+  - COALESCE((SELECT SUM(t.total_amount) FROM transaction t
+              WHERE t.portfolio_id = $1 AND t.side = 'BUY'  AND t.transaction_time <= $2), 0)
+  + COALESCE((SELECT SUM(t.total_amount) FROM transaction t
+              WHERE t.portfolio_id = $1 AND t.side = 'SELL' AND t.transaction_time <= $2), 0)
+  + COALESCE((SELECT SUM(d.amount) FROM dividend d
+              WHERE d.portfolio_id = $1 AND d.transaction_time <= $2), 0)
+  - COALESCE((SELECT SUM(f.amount) FROM portfolio_fee f
+              WHERE f.portfolio_id = $1 AND f.transaction_time <= $2), 0)
+)::NUMERIC AS cash
+`
+
+type GetPortfolioCashAsOfParams struct {
+	PortfolioID     int64     `json:"portfolio_id"`
+	TransactionTime time.Time `json:"transaction_time"`
+}
+
+func (q *Queries) GetPortfolioCashAsOf(ctx context.Context, arg GetPortfolioCashAsOfParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getPortfolioCashAsOf, arg.PortfolioID, arg.TransactionTime)
+	var cash string
+	err := row.Scan(&cash)
+	return cash, err
+}
+
 const getTransaction = `-- name: GetTransaction :one
 SELECT t.id, t.portfolio_id, t.ticker_id, t.side, t.quantity, t.price, t.realized_gain, t.fee, t.total_amount, t.transaction_time, tk.symbol, tk.name AS ticker_name
 FROM transaction t
@@ -185,6 +214,65 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 	return items, nil
 }
 
+const listTransactionsByPortfolioAsc = `-- name: ListTransactionsByPortfolioAsc :many
+SELECT t.id, t.portfolio_id, t.ticker_id, t.side, t.quantity, t.price, t.realized_gain, t.fee, t.total_amount, t.transaction_time, tk.symbol, tk.currency AS ticker_currency
+FROM transaction t
+JOIN ticker tk ON tk.id = t.ticker_id
+WHERE t.portfolio_id = $1
+ORDER BY t.transaction_time ASC
+`
+
+type ListTransactionsByPortfolioAscRow struct {
+	ID              int64     `json:"id"`
+	PortfolioID     int64     `json:"portfolio_id"`
+	TickerID        int64     `json:"ticker_id"`
+	Side            string    `json:"side"`
+	Quantity        string    `json:"quantity"`
+	Price           string    `json:"price"`
+	RealizedGain    string    `json:"realized_gain"`
+	Fee             string    `json:"fee"`
+	TotalAmount     string    `json:"total_amount"`
+	TransactionTime time.Time `json:"transaction_time"`
+	Symbol          string    `json:"symbol"`
+	TickerCurrency  string    `json:"ticker_currency"`
+}
+
+func (q *Queries) ListTransactionsByPortfolioAsc(ctx context.Context, portfolioID int64) ([]ListTransactionsByPortfolioAscRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTransactionsByPortfolioAsc, portfolioID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTransactionsByPortfolioAscRow{}
+	for rows.Next() {
+		var i ListTransactionsByPortfolioAscRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PortfolioID,
+			&i.TickerID,
+			&i.Side,
+			&i.Quantity,
+			&i.Price,
+			&i.RealizedGain,
+			&i.Fee,
+			&i.TotalAmount,
+			&i.TransactionTime,
+			&i.Symbol,
+			&i.TickerCurrency,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const sumFeesByPortfolio = `-- name: SumFeesByPortfolio :one
 SELECT COALESCE(SUM(fee), 0)::NUMERIC AS total_fees
 FROM transaction
@@ -208,6 +296,29 @@ SELECT (
 
 func (q *Queries) SumRealizedGainByPortfolio(ctx context.Context, portfolioID int64) (string, error) {
 	row := q.db.QueryRowContext(ctx, sumRealizedGainByPortfolio, portfolioID)
+	var total_realized_gain string
+	err := row.Scan(&total_realized_gain)
+	return total_realized_gain, err
+}
+
+const sumRealizedGainByPortfolioBefore = `-- name: SumRealizedGainByPortfolioBefore :one
+SELECT (
+    COALESCE((SELECT SUM(t.realized_gain) FROM transaction t
+              WHERE t.portfolio_id = $1 AND t.side = 'SELL' AND t.transaction_time <= $2), 0)
+  + COALESCE((SELECT SUM(d.amount) FROM dividend d
+              WHERE d.portfolio_id = $1 AND d.transaction_time <= $2), 0)
+  - COALESCE((SELECT SUM(f.amount) FROM portfolio_fee f
+              WHERE f.portfolio_id = $1 AND f.transaction_time <= $2), 0)
+)::NUMERIC AS total_realized_gain
+`
+
+type SumRealizedGainByPortfolioBeforeParams struct {
+	PortfolioID     int64     `json:"portfolio_id"`
+	TransactionTime time.Time `json:"transaction_time"`
+}
+
+func (q *Queries) SumRealizedGainByPortfolioBefore(ctx context.Context, arg SumRealizedGainByPortfolioBeforeParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, sumRealizedGainByPortfolioBefore, arg.PortfolioID, arg.TransactionTime)
 	var total_realized_gain string
 	err := row.Scan(&total_realized_gain)
 	return total_realized_gain, err

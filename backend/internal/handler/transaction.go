@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -141,6 +142,10 @@ func (h *Handler) BuyStock(c *gin.Context) {
 		return
 	}
 
+	if txTime.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+		go service.RecomputePortfolioSnapshotsFrom(context.Background(), h.queries, portfolioID, txTime)
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
 		"transaction":  tx,
 		"new_avg":      newAvg,
@@ -246,6 +251,10 @@ func (h *Handler) SellStock(c *gin.Context) {
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to record transaction")
 		return
+	}
+
+	if txTime.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+		go service.RecomputePortfolioSnapshotsFrom(context.Background(), h.queries, portfolioID, txTime)
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
