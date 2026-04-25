@@ -138,6 +138,7 @@ export interface WalletTransaction {
   category_id: number | null
   related_wallet_id: number | null
   related_portfolio_id: number | null
+  paired_transaction_id: number | null
   broker_rate: string | null
   note: string | null
   transaction_time: string

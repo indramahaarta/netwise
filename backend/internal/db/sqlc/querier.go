@@ -26,6 +26,7 @@ type Querier interface {
 	DeleteWallet(ctx context.Context, arg DeleteWalletParams) error
 	DeleteWalletCategory(ctx context.Context, arg DeleteWalletCategoryParams) error
 	DeleteWalletTransaction(ctx context.Context, arg DeleteWalletTransactionParams) error
+	DeleteWalletTransactionWithPair(ctx context.Context, id int64) error
 	GetAggregatedWalletCategoryBreakdown(ctx context.Context, arg GetAggregatedWalletCategoryBreakdownParams) ([]GetAggregatedWalletCategoryBreakdownRow, error)
 	GetAggregatedWalletSnapshots(ctx context.Context, arg GetAggregatedWalletSnapshotsParams) ([]GetAggregatedWalletSnapshotsRow, error)
 	GetAggregatedWalletSummary(ctx context.Context, arg GetAggregatedWalletSummaryParams) (GetAggregatedWalletSummaryRow, error)
@@ -64,6 +65,7 @@ type Querier interface {
 	ListWalletTransactions(ctx context.Context, arg ListWalletTransactionsParams) ([]ListWalletTransactionsRow, error)
 	ListWalletTransactionsByDateRange(ctx context.Context, arg ListWalletTransactionsByDateRangeParams) ([]ListWalletTransactionsByDateRangeRow, error)
 	ListWalletsByUser(ctx context.Context, userID int64) ([]Wallet, error)
+	SetPairedTransactionID(ctx context.Context, arg SetPairedTransactionIDParams) error
 	SumDividendsByPortfolio(ctx context.Context, portfolioID int64) (string, error)
 	SumFeesByPortfolio(ctx context.Context, portfolioID int64) (string, error)
 	SumRealizedGainByPortfolio(ctx context.Context, portfolioID int64) (string, error)

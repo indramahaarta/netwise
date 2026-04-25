@@ -232,6 +232,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
           to_wallet_id: parseInt(toWalletId),
           amount: parseNumberInput(amount),
           note,
+          transaction_time: format(txDate, 'yyyy-MM-dd'),
         })
       }
       setShowTypeDialog(false)

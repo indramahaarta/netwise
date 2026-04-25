@@ -143,14 +143,15 @@ type WalletSnapshot struct {
 }
 
 type WalletTransaction struct {
-	ID                 int64          `json:"id"`
-	WalletID           int64          `json:"wallet_id"`
-	Type               string         `json:"type"`
-	Amount             string         `json:"amount"`
-	CategoryID         sql.NullInt64  `json:"category_id"`
-	RelatedWalletID    sql.NullInt64  `json:"related_wallet_id"`
-	RelatedPortfolioID sql.NullInt64  `json:"related_portfolio_id"`
-	BrokerRate         sql.NullString `json:"broker_rate"`
-	Note               sql.NullString `json:"note"`
-	TransactionTime    time.Time      `json:"transaction_time"`
+	ID                  int64          `json:"id"`
+	WalletID            int64          `json:"wallet_id"`
+	Type                string         `json:"type"`
+	Amount              string         `json:"amount"`
+	CategoryID          sql.NullInt64  `json:"category_id"`
+	RelatedWalletID     sql.NullInt64  `json:"related_wallet_id"`
+	RelatedPortfolioID  sql.NullInt64  `json:"related_portfolio_id"`
+	BrokerRate          sql.NullString `json:"broker_rate"`
+	Note                sql.NullString `json:"note"`
+	TransactionTime     time.Time      `json:"transaction_time"`
+	PairedTransactionID sql.NullInt64  `json:"paired_transaction_id"`
 }

@@ -130,7 +130,7 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
                 inputMode="decimal"
                 value={quantity}
                 onChange={(e) => setQuantity(formatNumberInput(e.target.value))}
-                onBlur={() => setQuantity(formatNumberBlur(quantity))}
+                onBlur={() => setQuantity(formatNumberBlur(quantity, 8))}
                 required
               />
             </div>
@@ -141,7 +141,7 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
                 inputMode="decimal"
                 value={price}
                 onChange={(e) => setPrice(formatNumberInput(e.target.value))}
-                onBlur={() => setPrice(formatNumberBlur(price))}
+                onBlur={() => setPrice(formatNumberBlur(price, 8))}
                 required
               />
             </div>
@@ -167,7 +167,7 @@ export function BuySellDialog({ portfolioId, portfolioCurrency, side, open, onCl
               inputMode="decimal"
               value={fee}
               onChange={(e) => setFee(formatNumberInput(e.target.value))}
-              onBlur={() => setFee(formatNumberBlur(fee))}
+              onBlur={() => setFee(formatNumberBlur(fee, 8))}
             />
           </div>
           {quantity && price && (

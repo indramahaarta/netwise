@@ -346,10 +346,11 @@ func (h *Handler) AddWalletTransaction(c *gin.Context) {
 // --- Wallet-to-wallet transfer ---
 
 type transferRequest struct {
-	FromWalletID int64   `json:"from_wallet_id" binding:"required"`
-	ToWalletID   int64   `json:"to_wallet_id" binding:"required"`
-	Amount       float64 `json:"amount" binding:"required,gt=0"`
-	Note         string  `json:"note"`
+	FromWalletID    int64   `json:"from_wallet_id" binding:"required"`
+	ToWalletID      int64   `json:"to_wallet_id" binding:"required"`
+	Amount          float64 `json:"amount" binding:"required,gt=0"`
+	Note            string  `json:"note"`
+	TransactionTime *string `json:"transaction_time"`
 }
 
 func (h *Handler) TransferBetweenWallets(c *gin.Context) {
@@ -394,40 +395,64 @@ func (h *Handler) TransferBetweenWallets(c *gin.Context) {
 		note = sql.NullString{String: req.Note, Valid: true}
 	}
 
+	txTime := time.Now()
+	if req.TransactionTime != nil {
+		if t, err := time.Parse(time.RFC3339, *req.TransactionTime); err == nil {
+			txTime = t
+		} else if t, err := time.Parse("2006-01-02", *req.TransactionTime); err == nil {
+			txTime = t
+		}
+	}
+
 	// TRANSFER_OUT on source
 	out, err := h.queries.CreateWalletTransaction(c, db.CreateWalletTransactionParams{
-		WalletID:           req.FromWalletID,
-		Type:               "TRANSFER_OUT",
-		Amount:             amt.StringFixed(8),
-		CategoryID:         sql.NullInt64{},
-		RelatedWalletID:    sql.NullInt64{Int64: req.ToWalletID, Valid: true},
-		RelatedPortfolioID: sql.NullInt64{},
-		BrokerRate:         sql.NullString{},
-		Note:               note,
-		TransactionTime:    time.Now(),
+		WalletID:            req.FromWalletID,
+		Type:                "TRANSFER_OUT",
+		Amount:              amt.StringFixed(8),
+		CategoryID:          sql.NullInt64{},
+		RelatedWalletID:     sql.NullInt64{Int64: req.ToWalletID, Valid: true},
+		RelatedPortfolioID:  sql.NullInt64{},
+		BrokerRate:          sql.NullString{},
+		Note:                note,
+		TransactionTime:     txTime,
+		PairedTransactionID: sql.NullInt64{},
 	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to create transfer")
 		return
 	}
 
-	// TRANSFER_IN on destination
-	if _, err := h.queries.CreateWalletTransaction(c, db.CreateWalletTransactionParams{
-		WalletID:           req.ToWalletID,
-		Type:               "TRANSFER_IN",
-		Amount:             amt.StringFixed(8),
-		CategoryID:         sql.NullInt64{},
-		RelatedWalletID:    sql.NullInt64{Int64: req.FromWalletID, Valid: true},
-		RelatedPortfolioID: sql.NullInt64{},
-		BrokerRate:         sql.NullString{},
-		Note:               note,
-		TransactionTime:    time.Now(),
-	}); err != nil {
+	// TRANSFER_IN on destination — link back to the TRANSFER_OUT row
+	in, err := h.queries.CreateWalletTransaction(c, db.CreateWalletTransactionParams{
+		WalletID:            req.ToWalletID,
+		Type:                "TRANSFER_IN",
+		Amount:              amt.StringFixed(8),
+		CategoryID:          sql.NullInt64{},
+		RelatedWalletID:     sql.NullInt64{Int64: req.FromWalletID, Valid: true},
+		RelatedPortfolioID:  sql.NullInt64{},
+		BrokerRate:          sql.NullString{},
+		Note:                note,
+		TransactionTime:     txTime,
+		PairedTransactionID: sql.NullInt64{Int64: out.ID, Valid: true},
+	})
+	if err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to create transfer")
 		return
 	}
 
+	// Link the TRANSFER_OUT back to TRANSFER_IN
+	_ = h.queries.SetPairedTransactionID(c, db.SetPairedTransactionIDParams{
+		ID:                  out.ID,
+		PairedTransactionID: sql.NullInt64{Int64: in.ID, Valid: true},
+	})
+
 	service.InvalidateUserWalletSnapshots(userID)
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	if txTime.Before(today) {
+		fromID, toID := req.FromWalletID, req.ToWalletID
+		go service.RecomputeWalletSnapshotsFrom(context.Background(), h.queries, fromID, txTime)
+		go service.RecomputeWalletSnapshotsFrom(context.Background(), h.queries, toID, txTime)
+	}
 	c.JSON(http.StatusCreated, gin.H{"transfer_out": out, "amount": amt.StringFixed(8)})
 }
 
@@ -714,7 +739,7 @@ func (h *Handler) DeleteWalletTransaction(c *gin.Context) {
 	walletID := getWalletID(c)
 	txID := paramInt64(c, "txId")
 
-	// Fetch before deleting to get the date
+	// Fetch before deleting to get the date and paired transfer info
 	oldTx, err := h.queries.GetWalletTransaction(c, db.GetWalletTransactionParams{
 		ID:       txID,
 		WalletID: walletID,
@@ -724,18 +749,21 @@ func (h *Handler) DeleteWalletTransaction(c *gin.Context) {
 		return
 	}
 
-	if err := h.queries.DeleteWalletTransaction(c, db.DeleteWalletTransactionParams{
-		ID:       txID,
-		WalletID: walletID,
-	}); err != nil {
+	if err := h.queries.DeleteWalletTransactionWithPair(c, txID); err != nil {
 		respondError(c, http.StatusInternalServerError, "failed to delete transaction")
 		return
 	}
 
 	service.InvalidateUserWalletSnapshots(middleware.GetUserID(c))
-	if oldTx.TransactionTime.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	if oldTx.TransactionTime.Before(today) {
 		wID := walletID
 		go service.RecomputeWalletSnapshotsFrom(context.Background(), h.queries, wID, oldTx.TransactionTime)
+		// Recompute the related wallet's snapshots if this was a transfer
+		if oldTx.RelatedWalletID.Valid {
+			relID := oldTx.RelatedWalletID.Int64
+			go service.RecomputeWalletSnapshotsFrom(context.Background(), h.queries, relID, oldTx.TransactionTime)
+		}
 	}
 	c.Status(http.StatusNoContent)
 }

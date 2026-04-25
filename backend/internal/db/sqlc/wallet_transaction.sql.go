@@ -14,21 +14,22 @@ import (
 const createWalletTransaction = `-- name: CreateWalletTransaction :one
 INSERT INTO wallet_transaction (
     wallet_id, type, amount, category_id,
-    related_wallet_id, related_portfolio_id, broker_rate, note, transaction_time
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, wallet_id, type, amount, category_id, related_wallet_id, related_portfolio_id, broker_rate, note, transaction_time
+    related_wallet_id, related_portfolio_id, broker_rate, note, transaction_time, paired_transaction_id
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, wallet_id, type, amount, category_id, related_wallet_id, related_portfolio_id, broker_rate, note, transaction_time, paired_transaction_id
 `
 
 type CreateWalletTransactionParams struct {
-	WalletID           int64          `json:"wallet_id"`
-	Type               string         `json:"type"`
-	Amount             string         `json:"amount"`
-	CategoryID         sql.NullInt64  `json:"category_id"`
-	RelatedWalletID    sql.NullInt64  `json:"related_wallet_id"`
-	RelatedPortfolioID sql.NullInt64  `json:"related_portfolio_id"`
-	BrokerRate         sql.NullString `json:"broker_rate"`
-	Note               sql.NullString `json:"note"`
-	TransactionTime    time.Time      `json:"transaction_time"`
+	WalletID            int64          `json:"wallet_id"`
+	Type                string         `json:"type"`
+	Amount              string         `json:"amount"`
+	CategoryID          sql.NullInt64  `json:"category_id"`
+	RelatedWalletID     sql.NullInt64  `json:"related_wallet_id"`
+	RelatedPortfolioID  sql.NullInt64  `json:"related_portfolio_id"`
+	BrokerRate          sql.NullString `json:"broker_rate"`
+	Note                sql.NullString `json:"note"`
+	TransactionTime     time.Time      `json:"transaction_time"`
+	PairedTransactionID sql.NullInt64  `json:"paired_transaction_id"`
 }
 
 func (q *Queries) CreateWalletTransaction(ctx context.Context, arg CreateWalletTransactionParams) (WalletTransaction, error) {
@@ -42,6 +43,7 @@ func (q *Queries) CreateWalletTransaction(ctx context.Context, arg CreateWalletT
 		arg.BrokerRate,
 		arg.Note,
 		arg.TransactionTime,
+		arg.PairedTransactionID,
 	)
 	var i WalletTransaction
 	err := row.Scan(
@@ -55,6 +57,7 @@ func (q *Queries) CreateWalletTransaction(ctx context.Context, arg CreateWalletT
 		&i.BrokerRate,
 		&i.Note,
 		&i.TransactionTime,
+		&i.PairedTransactionID,
 	)
 	return i, err
 }
@@ -70,6 +73,17 @@ type DeleteWalletTransactionParams struct {
 
 func (q *Queries) DeleteWalletTransaction(ctx context.Context, arg DeleteWalletTransactionParams) error {
 	_, err := q.db.ExecContext(ctx, deleteWalletTransaction, arg.ID, arg.WalletID)
+	return err
+}
+
+const deleteWalletTransactionWithPair = `-- name: DeleteWalletTransactionWithPair :exec
+DELETE FROM wallet_transaction
+WHERE wallet_transaction.id = $1
+   OR wallet_transaction.id = (SELECT paired_transaction_id FROM wallet_transaction wt2 WHERE wt2.id = $1)
+`
+
+func (q *Queries) DeleteWalletTransactionWithPair(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteWalletTransactionWithPair, id)
 	return err
 }
 
@@ -288,7 +302,7 @@ func (q *Queries) GetWalletSummary(ctx context.Context, arg GetWalletSummaryPara
 }
 
 const getWalletTransaction = `-- name: GetWalletTransaction :one
-SELECT wt.id, wt.wallet_id, wt.type, wt.amount, wt.category_id, wt.related_wallet_id, wt.related_portfolio_id, wt.broker_rate, wt.note, wt.transaction_time, wc.name AS category_name, w2.name AS related_wallet_name
+SELECT wt.id, wt.wallet_id, wt.type, wt.amount, wt.category_id, wt.related_wallet_id, wt.related_portfolio_id, wt.broker_rate, wt.note, wt.transaction_time, wt.paired_transaction_id, wc.name AS category_name, w2.name AS related_wallet_name
 FROM wallet_transaction wt
 LEFT JOIN wallet_category wc ON wc.id = wt.category_id
 LEFT JOIN wallet w2 ON w2.id = wt.related_wallet_id
@@ -301,18 +315,19 @@ type GetWalletTransactionParams struct {
 }
 
 type GetWalletTransactionRow struct {
-	ID                 int64          `json:"id"`
-	WalletID           int64          `json:"wallet_id"`
-	Type               string         `json:"type"`
-	Amount             string         `json:"amount"`
-	CategoryID         sql.NullInt64  `json:"category_id"`
-	RelatedWalletID    sql.NullInt64  `json:"related_wallet_id"`
-	RelatedPortfolioID sql.NullInt64  `json:"related_portfolio_id"`
-	BrokerRate         sql.NullString `json:"broker_rate"`
-	Note               sql.NullString `json:"note"`
-	TransactionTime    time.Time      `json:"transaction_time"`
-	CategoryName       sql.NullString `json:"category_name"`
-	RelatedWalletName  sql.NullString `json:"related_wallet_name"`
+	ID                  int64          `json:"id"`
+	WalletID            int64          `json:"wallet_id"`
+	Type                string         `json:"type"`
+	Amount              string         `json:"amount"`
+	CategoryID          sql.NullInt64  `json:"category_id"`
+	RelatedWalletID     sql.NullInt64  `json:"related_wallet_id"`
+	RelatedPortfolioID  sql.NullInt64  `json:"related_portfolio_id"`
+	BrokerRate          sql.NullString `json:"broker_rate"`
+	Note                sql.NullString `json:"note"`
+	TransactionTime     time.Time      `json:"transaction_time"`
+	PairedTransactionID sql.NullInt64  `json:"paired_transaction_id"`
+	CategoryName        sql.NullString `json:"category_name"`
+	RelatedWalletName   sql.NullString `json:"related_wallet_name"`
 }
 
 func (q *Queries) GetWalletTransaction(ctx context.Context, arg GetWalletTransactionParams) (GetWalletTransactionRow, error) {
@@ -329,6 +344,7 @@ func (q *Queries) GetWalletTransaction(ctx context.Context, arg GetWalletTransac
 		&i.BrokerRate,
 		&i.Note,
 		&i.TransactionTime,
+		&i.PairedTransactionID,
 		&i.CategoryName,
 		&i.RelatedWalletName,
 	)
@@ -337,7 +353,7 @@ func (q *Queries) GetWalletTransaction(ctx context.Context, arg GetWalletTransac
 
 const listWalletTransactions = `-- name: ListWalletTransactions :many
 SELECT
-    wt.id, wt.wallet_id, wt.type, wt.amount, wt.category_id, wt.related_wallet_id, wt.related_portfolio_id, wt.broker_rate, wt.note, wt.transaction_time,
+    wt.id, wt.wallet_id, wt.type, wt.amount, wt.category_id, wt.related_wallet_id, wt.related_portfolio_id, wt.broker_rate, wt.note, wt.transaction_time, wt.paired_transaction_id,
     wc.name AS category_name,
     w2.name AS related_wallet_name
 FROM wallet_transaction wt
@@ -355,18 +371,19 @@ type ListWalletTransactionsParams struct {
 }
 
 type ListWalletTransactionsRow struct {
-	ID                 int64          `json:"id"`
-	WalletID           int64          `json:"wallet_id"`
-	Type               string         `json:"type"`
-	Amount             string         `json:"amount"`
-	CategoryID         sql.NullInt64  `json:"category_id"`
-	RelatedWalletID    sql.NullInt64  `json:"related_wallet_id"`
-	RelatedPortfolioID sql.NullInt64  `json:"related_portfolio_id"`
-	BrokerRate         sql.NullString `json:"broker_rate"`
-	Note               sql.NullString `json:"note"`
-	TransactionTime    time.Time      `json:"transaction_time"`
-	CategoryName       sql.NullString `json:"category_name"`
-	RelatedWalletName  sql.NullString `json:"related_wallet_name"`
+	ID                  int64          `json:"id"`
+	WalletID            int64          `json:"wallet_id"`
+	Type                string         `json:"type"`
+	Amount              string         `json:"amount"`
+	CategoryID          sql.NullInt64  `json:"category_id"`
+	RelatedWalletID     sql.NullInt64  `json:"related_wallet_id"`
+	RelatedPortfolioID  sql.NullInt64  `json:"related_portfolio_id"`
+	BrokerRate          sql.NullString `json:"broker_rate"`
+	Note                sql.NullString `json:"note"`
+	TransactionTime     time.Time      `json:"transaction_time"`
+	PairedTransactionID sql.NullInt64  `json:"paired_transaction_id"`
+	CategoryName        sql.NullString `json:"category_name"`
+	RelatedWalletName   sql.NullString `json:"related_wallet_name"`
 }
 
 func (q *Queries) ListWalletTransactions(ctx context.Context, arg ListWalletTransactionsParams) ([]ListWalletTransactionsRow, error) {
@@ -389,6 +406,7 @@ func (q *Queries) ListWalletTransactions(ctx context.Context, arg ListWalletTran
 			&i.BrokerRate,
 			&i.Note,
 			&i.TransactionTime,
+			&i.PairedTransactionID,
 			&i.CategoryName,
 			&i.RelatedWalletName,
 		); err != nil {
@@ -407,7 +425,7 @@ func (q *Queries) ListWalletTransactions(ctx context.Context, arg ListWalletTran
 
 const listWalletTransactionsByDateRange = `-- name: ListWalletTransactionsByDateRange :many
 SELECT
-    wt.id, wt.wallet_id, wt.type, wt.amount, wt.category_id, wt.related_wallet_id, wt.related_portfolio_id, wt.broker_rate, wt.note, wt.transaction_time,
+    wt.id, wt.wallet_id, wt.type, wt.amount, wt.category_id, wt.related_wallet_id, wt.related_portfolio_id, wt.broker_rate, wt.note, wt.transaction_time, wt.paired_transaction_id,
     wc.name AS category_name,
     w2.name AS related_wallet_name
 FROM wallet_transaction wt
@@ -426,18 +444,19 @@ type ListWalletTransactionsByDateRangeParams struct {
 }
 
 type ListWalletTransactionsByDateRangeRow struct {
-	ID                 int64          `json:"id"`
-	WalletID           int64          `json:"wallet_id"`
-	Type               string         `json:"type"`
-	Amount             string         `json:"amount"`
-	CategoryID         sql.NullInt64  `json:"category_id"`
-	RelatedWalletID    sql.NullInt64  `json:"related_wallet_id"`
-	RelatedPortfolioID sql.NullInt64  `json:"related_portfolio_id"`
-	BrokerRate         sql.NullString `json:"broker_rate"`
-	Note               sql.NullString `json:"note"`
-	TransactionTime    time.Time      `json:"transaction_time"`
-	CategoryName       sql.NullString `json:"category_name"`
-	RelatedWalletName  sql.NullString `json:"related_wallet_name"`
+	ID                  int64          `json:"id"`
+	WalletID            int64          `json:"wallet_id"`
+	Type                string         `json:"type"`
+	Amount              string         `json:"amount"`
+	CategoryID          sql.NullInt64  `json:"category_id"`
+	RelatedWalletID     sql.NullInt64  `json:"related_wallet_id"`
+	RelatedPortfolioID  sql.NullInt64  `json:"related_portfolio_id"`
+	BrokerRate          sql.NullString `json:"broker_rate"`
+	Note                sql.NullString `json:"note"`
+	TransactionTime     time.Time      `json:"transaction_time"`
+	PairedTransactionID sql.NullInt64  `json:"paired_transaction_id"`
+	CategoryName        sql.NullString `json:"category_name"`
+	RelatedWalletName   sql.NullString `json:"related_wallet_name"`
 }
 
 func (q *Queries) ListWalletTransactionsByDateRange(ctx context.Context, arg ListWalletTransactionsByDateRangeParams) ([]ListWalletTransactionsByDateRangeRow, error) {
@@ -460,6 +479,7 @@ func (q *Queries) ListWalletTransactionsByDateRange(ctx context.Context, arg Lis
 			&i.BrokerRate,
 			&i.Note,
 			&i.TransactionTime,
+			&i.PairedTransactionID,
 			&i.CategoryName,
 			&i.RelatedWalletName,
 		); err != nil {
@@ -476,11 +496,25 @@ func (q *Queries) ListWalletTransactionsByDateRange(ctx context.Context, arg Lis
 	return items, nil
 }
 
+const setPairedTransactionID = `-- name: SetPairedTransactionID :exec
+UPDATE wallet_transaction SET paired_transaction_id = $2 WHERE id = $1
+`
+
+type SetPairedTransactionIDParams struct {
+	ID                  int64         `json:"id"`
+	PairedTransactionID sql.NullInt64 `json:"paired_transaction_id"`
+}
+
+func (q *Queries) SetPairedTransactionID(ctx context.Context, arg SetPairedTransactionIDParams) error {
+	_, err := q.db.ExecContext(ctx, setPairedTransactionID, arg.ID, arg.PairedTransactionID)
+	return err
+}
+
 const updateWalletTransaction = `-- name: UpdateWalletTransaction :one
 UPDATE wallet_transaction
 SET type = $3, amount = $4, category_id = $5, note = $6, transaction_time = $7
 WHERE id = $1 AND wallet_id = $2
-RETURNING id, wallet_id, type, amount, category_id, related_wallet_id, related_portfolio_id, broker_rate, note, transaction_time
+RETURNING id, wallet_id, type, amount, category_id, related_wallet_id, related_portfolio_id, broker_rate, note, transaction_time, paired_transaction_id
 `
 
 type UpdateWalletTransactionParams struct {
@@ -515,6 +549,7 @@ func (q *Queries) UpdateWalletTransaction(ctx context.Context, arg UpdateWalletT
 		&i.BrokerRate,
 		&i.Note,
 		&i.TransactionTime,
+		&i.PairedTransactionID,
 	)
 	return i, err
 }

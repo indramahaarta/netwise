@@ -1,7 +1,15 @@
-/** Format a string as the user types: inserts `.` every 3 digits, `,` for decimal */
+/** Format a string as the user types: inserts `.` every 3 digits, `,` for decimal.
+ *  Accepts a trailing `.` as the decimal separator when no `,` is present yet,
+ *  so mobile en-locale keypads (which show `.` instead of `,`) work correctly. */
 export function formatNumberInput(input: string): string {
+  // If there is no comma yet and input ends with `.`, the user typed `.` as the decimal separator.
+  // Convert only that trailing dot; all other dots are thousands separators added by this formatter.
+  let normalized = input
+  if (!input.includes(',') && input.endsWith('.')) {
+    normalized = input.slice(0, -1) + ','
+  }
   // Strip everything except digits and the first comma
-  const digits = input.replace(/[^\d,]/g, '')
+  const digits = normalized.replace(/[^\d,]/g, '')
   const commaIdx = digits.indexOf(',')
   let intPart: string
   let decPart: string | undefined
@@ -15,13 +23,13 @@ export function formatNumberInput(input: string): string {
   return decPart !== undefined ? `${formattedInt},${decPart}` : formattedInt
 }
 
-/** Format on blur: enforces 2 decimal places */
-export function formatNumberBlur(input: string): string {
+/** Format on blur: enforces decimal places (default 2). Pass maxDecimals=8 for share quantities. */
+export function formatNumberBlur(input: string, maxDecimals = 2): string {
   const num = parseNumberInput(input)
   if (!input || isNaN(num)) return input
   return new Intl.NumberFormat('id-ID', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: Math.min(2, maxDecimals),
+    maximumFractionDigits: maxDecimals,
   }).format(num)
 }
 

@@ -1,9 +1,17 @@
 -- name: CreateWalletTransaction :one
 INSERT INTO wallet_transaction (
     wallet_id, type, amount, category_id,
-    related_wallet_id, related_portfolio_id, broker_rate, note, transaction_time
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    related_wallet_id, related_portfolio_id, broker_rate, note, transaction_time, paired_transaction_id
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING *;
+
+-- name: SetPairedTransactionID :exec
+UPDATE wallet_transaction SET paired_transaction_id = $2 WHERE id = $1;
+
+-- name: DeleteWalletTransactionWithPair :exec
+DELETE FROM wallet_transaction
+WHERE wallet_transaction.id = $1
+   OR wallet_transaction.id = (SELECT paired_transaction_id FROM wallet_transaction wt2 WHERE wt2.id = $1);
 
 -- name: ListWalletTransactions :many
 SELECT

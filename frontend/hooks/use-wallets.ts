@@ -111,7 +111,7 @@ export function useAddWalletTransactionForWallet() {
 export function useTransferWallets() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { from_wallet_id: number; to_wallet_id: number; amount: number; note?: string }) =>
+    mutationFn: (data: { from_wallet_id: number; to_wallet_id: number; amount: number; note?: string; transaction_time?: string }) =>
       api.post('/api/v1/wallets/transfer', data).then((r) => r.data),
     onSuccess: (data, variables) => {
       qc.invalidateQueries({ queryKey: ['wallets'] })
@@ -235,8 +235,9 @@ export function useDeleteWalletTransaction(walletId: string | number) {
     mutationFn: (txId: number) =>
       api.delete(`/api/v1/wallets/${walletId}/transactions/${txId}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['wallet-transactions', walletId] })
-      qc.invalidateQueries({ queryKey: ['wallets', walletId] })
+      // Invalidate all wallet-transactions (covers the paired transfer side too)
+      qc.invalidateQueries({ queryKey: ['wallet-transactions'] })
+      qc.invalidateQueries({ queryKey: ['wallets'] })
       qc.invalidateQueries({ queryKey: ['networth'] })
     },
   })
