@@ -222,8 +222,25 @@ export function useUpdateWalletTransaction(walletId: string | number, txId: numb
     }) =>
       api.put(`/api/v1/wallets/${walletId}/transactions/${txId}`, data).then((r) => r.data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['wallet-transactions', walletId] })
-      qc.invalidateQueries({ queryKey: ['wallets', walletId] })
+      qc.invalidateQueries({ queryKey: ['wallet-transactions'] })
+      qc.invalidateQueries({ queryKey: ['wallets'] })
+      qc.invalidateQueries({ queryKey: ['wallet-summary-aggregate'] })
+      qc.invalidateQueries({ queryKey: ['wallet-transactions-aggregate'] })
+      qc.invalidateQueries({ queryKey: ['networth'] })
+    },
+  })
+}
+
+export function useUpdateWalletTransfer(walletId: string | number, txId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { amount: number; note?: string; transaction_time: string }) =>
+      api.put(`/api/v1/wallets/${walletId}/transactions/${txId}/transfer`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wallet-transactions'] })
+      qc.invalidateQueries({ queryKey: ['wallets'] })
+      qc.invalidateQueries({ queryKey: ['wallet-summary-aggregate'] })
+      qc.invalidateQueries({ queryKey: ['wallet-transactions-aggregate'] })
       qc.invalidateQueries({ queryKey: ['networth'] })
     },
   })
@@ -235,9 +252,10 @@ export function useDeleteWalletTransaction(walletId: string | number) {
     mutationFn: (txId: number) =>
       api.delete(`/api/v1/wallets/${walletId}/transactions/${txId}`),
     onSuccess: () => {
-      // Invalidate all wallet-transactions (covers the paired transfer side too)
       qc.invalidateQueries({ queryKey: ['wallet-transactions'] })
       qc.invalidateQueries({ queryKey: ['wallets'] })
+      qc.invalidateQueries({ queryKey: ['wallet-summary-aggregate'] })
+      qc.invalidateQueries({ queryKey: ['wallet-transactions-aggregate'] })
       qc.invalidateQueries({ queryKey: ['networth'] })
     },
   })
@@ -276,6 +294,24 @@ export function useWalletTransactionsByDateRange(id: string | number, from?: str
     queryFn: () =>
       api.get(`/api/v1/wallets/${id}/transactions`, { params: { from, to } }).then((r) => r.data),
     enabled: !!id,
+  })
+}
+
+export function useAggregatedWalletTransactions(
+  walletId: number | null,
+  startDate: string,
+  endDate: string,
+  limit = 50,
+) {
+  return useQuery<(WalletTransaction & { wallet_name: string })[]>({
+    queryKey: ['wallet-transactions-aggregate', walletId ?? 'all', startDate, endDate, limit],
+    queryFn: () =>
+      api
+        .get('/api/v1/wallets/transactions', {
+          params: { start_date: startDate, end_date: endDate, wallet_id: walletId ?? 0, limit },
+        })
+        .then((r) => r.data),
+    enabled: !!startDate && !!endDate,
   })
 }
 

@@ -59,6 +59,12 @@ SET type = $3, amount = $4, category_id = $5, note = $6, transaction_time = $7
 WHERE id = $1 AND wallet_id = $2
 RETURNING *;
 
+-- name: UpdateTransferPair :exec
+UPDATE wallet_transaction
+SET amount = $2, transaction_time = $3, note = $4
+WHERE wallet_transaction.id = $1
+   OR wallet_transaction.id = (SELECT paired_transaction_id FROM wallet_transaction wt2 WHERE wt2.id = $1);
+
 -- name: DeleteWalletTransaction :exec
 DELETE FROM wallet_transaction WHERE id = $1 AND wallet_id = $2;
 
@@ -107,6 +113,23 @@ JOIN wallet w ON w.id = wt.wallet_id
 WHERE w.user_id = $1
   AND wt.transaction_time >= $2
   AND wt.transaction_time < $3;
+
+-- name: ListAggregatedWalletTransactions :many
+SELECT
+    wt.*,
+    wc.name AS category_name,
+    w.name AS wallet_name,
+    w2.name AS related_wallet_name
+FROM wallet_transaction wt
+JOIN wallet w ON w.id = wt.wallet_id
+LEFT JOIN wallet_category wc ON wc.id = wt.category_id
+LEFT JOIN wallet w2 ON w2.id = wt.related_wallet_id
+WHERE w.user_id = $1
+  AND wt.transaction_time >= $2
+  AND wt.transaction_time < $3
+  AND ($4::bigint = 0 OR wt.wallet_id = $4)
+ORDER BY wt.transaction_time DESC, wt.id DESC
+LIMIT $5 OFFSET $6;
 
 -- name: GetAggregatedWalletCategoryBreakdown :many
 SELECT

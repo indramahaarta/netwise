@@ -49,6 +49,7 @@ type Querier interface {
 	GetWalletForUser(ctx context.Context, arg GetWalletForUserParams) (Wallet, error)
 	GetWalletSummary(ctx context.Context, arg GetWalletSummaryParams) (GetWalletSummaryRow, error)
 	GetWalletTransaction(ctx context.Context, arg GetWalletTransactionParams) (GetWalletTransactionRow, error)
+	ListAggregatedWalletTransactions(ctx context.Context, arg ListAggregatedWalletTransactionsParams) ([]ListAggregatedWalletTransactionsRow, error)
 	ListAllPortfolios(ctx context.Context) ([]Portfolio, error)
 	ListAllWallets(ctx context.Context) ([]Wallet, error)
 	ListCashFlows(ctx context.Context, arg ListCashFlowsParams) ([]CashFlow, error)
@@ -72,6 +73,7 @@ type Querier interface {
 	SumRealizedGainByPortfolioBefore(ctx context.Context, arg SumRealizedGainByPortfolioBeforeParams) (string, error)
 	UpdatePortfolio(ctx context.Context, arg UpdatePortfolioParams) (Portfolio, error)
 	UpdatePortfolioCash(ctx context.Context, arg UpdatePortfolioCashParams) (Portfolio, error)
+	UpdateTransferPair(ctx context.Context, arg UpdateTransferPairParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
 	UpdateWalletName(ctx context.Context, arg UpdateWalletNameParams) (Wallet, error)
 	UpdateWalletTransaction(ctx context.Context, arg UpdateWalletTransactionParams) (WalletTransaction, error)

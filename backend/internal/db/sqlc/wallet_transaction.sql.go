@@ -351,6 +351,95 @@ func (q *Queries) GetWalletTransaction(ctx context.Context, arg GetWalletTransac
 	return i, err
 }
 
+const listAggregatedWalletTransactions = `-- name: ListAggregatedWalletTransactions :many
+SELECT
+    wt.id, wt.wallet_id, wt.type, wt.amount, wt.category_id, wt.related_wallet_id, wt.related_portfolio_id, wt.broker_rate, wt.note, wt.transaction_time, wt.paired_transaction_id,
+    wc.name AS category_name,
+    w.name AS wallet_name,
+    w2.name AS related_wallet_name
+FROM wallet_transaction wt
+JOIN wallet w ON w.id = wt.wallet_id
+LEFT JOIN wallet_category wc ON wc.id = wt.category_id
+LEFT JOIN wallet w2 ON w2.id = wt.related_wallet_id
+WHERE w.user_id = $1
+  AND wt.transaction_time >= $2
+  AND wt.transaction_time < $3
+  AND ($4::bigint = 0 OR wt.wallet_id = $4)
+ORDER BY wt.transaction_time DESC, wt.id DESC
+LIMIT $5 OFFSET $6
+`
+
+type ListAggregatedWalletTransactionsParams struct {
+	UserID            int64     `json:"user_id"`
+	TransactionTime   time.Time `json:"transaction_time"`
+	TransactionTime_2 time.Time `json:"transaction_time_2"`
+	Column4           int64     `json:"column_4"`
+	Limit             int32     `json:"limit"`
+	Offset            int32     `json:"offset"`
+}
+
+type ListAggregatedWalletTransactionsRow struct {
+	ID                  int64          `json:"id"`
+	WalletID            int64          `json:"wallet_id"`
+	Type                string         `json:"type"`
+	Amount              string         `json:"amount"`
+	CategoryID          sql.NullInt64  `json:"category_id"`
+	RelatedWalletID     sql.NullInt64  `json:"related_wallet_id"`
+	RelatedPortfolioID  sql.NullInt64  `json:"related_portfolio_id"`
+	BrokerRate          sql.NullString `json:"broker_rate"`
+	Note                sql.NullString `json:"note"`
+	TransactionTime     time.Time      `json:"transaction_time"`
+	PairedTransactionID sql.NullInt64  `json:"paired_transaction_id"`
+	CategoryName        sql.NullString `json:"category_name"`
+	WalletName          string         `json:"wallet_name"`
+	RelatedWalletName   sql.NullString `json:"related_wallet_name"`
+}
+
+func (q *Queries) ListAggregatedWalletTransactions(ctx context.Context, arg ListAggregatedWalletTransactionsParams) ([]ListAggregatedWalletTransactionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAggregatedWalletTransactions,
+		arg.UserID,
+		arg.TransactionTime,
+		arg.TransactionTime_2,
+		arg.Column4,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAggregatedWalletTransactionsRow{}
+	for rows.Next() {
+		var i ListAggregatedWalletTransactionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WalletID,
+			&i.Type,
+			&i.Amount,
+			&i.CategoryID,
+			&i.RelatedWalletID,
+			&i.RelatedPortfolioID,
+			&i.BrokerRate,
+			&i.Note,
+			&i.TransactionTime,
+			&i.PairedTransactionID,
+			&i.CategoryName,
+			&i.WalletName,
+			&i.RelatedWalletName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWalletTransactions = `-- name: ListWalletTransactions :many
 SELECT
     wt.id, wt.wallet_id, wt.type, wt.amount, wt.category_id, wt.related_wallet_id, wt.related_portfolio_id, wt.broker_rate, wt.note, wt.transaction_time, wt.paired_transaction_id,
@@ -507,6 +596,30 @@ type SetPairedTransactionIDParams struct {
 
 func (q *Queries) SetPairedTransactionID(ctx context.Context, arg SetPairedTransactionIDParams) error {
 	_, err := q.db.ExecContext(ctx, setPairedTransactionID, arg.ID, arg.PairedTransactionID)
+	return err
+}
+
+const updateTransferPair = `-- name: UpdateTransferPair :exec
+UPDATE wallet_transaction
+SET amount = $2, transaction_time = $3, note = $4
+WHERE wallet_transaction.id = $1
+   OR wallet_transaction.id = (SELECT paired_transaction_id FROM wallet_transaction wt2 WHERE wt2.id = $1)
+`
+
+type UpdateTransferPairParams struct {
+	ID              int64          `json:"id"`
+	Amount          string         `json:"amount"`
+	TransactionTime time.Time      `json:"transaction_time"`
+	Note            sql.NullString `json:"note"`
+}
+
+func (q *Queries) UpdateTransferPair(ctx context.Context, arg UpdateTransferPairParams) error {
+	_, err := q.db.ExecContext(ctx, updateTransferPair,
+		arg.ID,
+		arg.Amount,
+		arg.TransactionTime,
+		arg.Note,
+	)
 	return err
 }
 

@@ -143,6 +143,7 @@ export interface WalletTransaction {
   note: string | null
   transaction_time: string
   category_name: string | null
+  wallet_name?: string
   related_wallet_name: string | null
 }
 

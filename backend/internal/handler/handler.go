@@ -58,6 +58,7 @@ func RegisterProtectedRoutes(r *gin.RouterGroup, queries *db.Queries, cfg *confi
 		wallets.GET("/snapshots", h.GetAggregatedWalletSnapshots)
 		wallets.GET("/summary", h.GetAggregatedWalletSummary)
 		wallets.GET("/categories", h.GetAggregatedWalletCategories)
+		wallets.GET("/transactions", h.GetAggregatedWalletTransactions)
 		w := wallets.Group("/:id")
 		w.Use(h.walletOwnerMiddleware())
 		{
@@ -68,6 +69,7 @@ func RegisterProtectedRoutes(r *gin.RouterGroup, queries *db.Queries, cfg *confi
 			w.GET("/transactions", h.ListWalletTransactions)
 			w.POST("/transactions", h.AddWalletTransaction)
 			w.PUT("/transactions/:txId", h.UpdateWalletTransaction)
+			w.PUT("/transactions/:txId/transfer", h.UpdateWalletTransfer)
 			w.DELETE("/transactions/:txId", h.DeleteWalletTransaction)
 			w.GET("/summary", h.GetWalletSummary)
 			w.GET("/summary/categories", h.GetWalletCategoryBreakdown)

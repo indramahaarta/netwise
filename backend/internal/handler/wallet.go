@@ -735,6 +735,76 @@ func (h *Handler) UpdateWalletTransaction(c *gin.Context) {
 	c.JSON(http.StatusOK, tx)
 }
 
+type updateTransferRequest struct {
+	Amount          float64 `json:"amount" binding:"required,gt=0"`
+	Note            string  `json:"note"`
+	TransactionTime string  `json:"transaction_time" binding:"required"`
+}
+
+func (h *Handler) UpdateWalletTransfer(c *gin.Context) {
+	walletID := getWalletID(c)
+	txID := paramInt64(c, "txId")
+
+	var req updateTransferRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Verify tx belongs to wallet and is a transfer
+	oldTx, err := h.queries.GetWalletTransaction(c, db.GetWalletTransactionParams{
+		ID:       txID,
+		WalletID: walletID,
+	})
+	if err != nil {
+		respondNotFound(c, "transaction")
+		return
+	}
+	if oldTx.Type != "TRANSFER_IN" && oldTx.Type != "TRANSFER_OUT" {
+		respondError(c, http.StatusBadRequest, "transaction is not a transfer")
+		return
+	}
+
+	txTime, err := time.Parse(time.RFC3339, req.TransactionTime)
+	if err != nil {
+		if txTime, err = time.Parse("2006-01-02", req.TransactionTime); err != nil {
+			respondError(c, http.StatusBadRequest, "invalid transaction_time format")
+			return
+		}
+	}
+
+	amt := decimal.NewFromFloat(req.Amount)
+	note := sql.NullString{}
+	if req.Note != "" {
+		note = sql.NullString{String: req.Note, Valid: true}
+	}
+
+	if err := h.queries.UpdateTransferPair(c, db.UpdateTransferPairParams{
+		ID:              txID,
+		Amount:          amt.StringFixed(8),
+		TransactionTime: txTime,
+		Note:            note,
+	}); err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to update transfer")
+		return
+	}
+
+	userID := middleware.GetUserID(c)
+	service.InvalidateUserWalletSnapshots(userID)
+	earliestDate := oldTx.TransactionTime
+	if txTime.Before(earliestDate) {
+		earliestDate = txTime
+	}
+	if earliestDate.Before(time.Now().UTC().Truncate(24 * time.Hour)) {
+		go service.RecomputeWalletSnapshotsFrom(context.Background(), h.queries, walletID, earliestDate)
+		if oldTx.RelatedWalletID.Valid {
+			relID := oldTx.RelatedWalletID.Int64
+			go service.RecomputeWalletSnapshotsFrom(context.Background(), h.queries, relID, earliestDate)
+		}
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h *Handler) DeleteWalletTransaction(c *gin.Context) {
 	walletID := getWalletID(c)
 	txID := paramInt64(c, "txId")
@@ -1130,4 +1200,127 @@ func (h *Handler) GetAggregatedWalletCategories(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, rows)
+}
+
+type aggregatedWalletTxResponse struct {
+	ID                  int64   `json:"id"`
+	WalletID            int64   `json:"wallet_id"`
+	WalletName          string  `json:"wallet_name"`
+	Type                string  `json:"type"`
+	Amount              string  `json:"amount"`
+	CategoryID          *int64  `json:"category_id"`
+	RelatedWalletID     *int64  `json:"related_wallet_id"`
+	RelatedPortfolioID  *int64  `json:"related_portfolio_id"`
+	PairedTransactionID *int64  `json:"paired_transaction_id"`
+	BrokerRate          *string `json:"broker_rate"`
+	Note                *string `json:"note"`
+	TransactionTime     string  `json:"transaction_time"`
+	CategoryName        *string `json:"category_name"`
+	RelatedWalletName   *string `json:"related_wallet_name"`
+}
+
+// GetAggregatedWalletTransactions returns wallet transactions across all of the user's wallets
+// (or a single wallet when wallet_id > 0), filtered by date range with limit/offset pagination.
+func (h *Handler) GetAggregatedWalletTransactions(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	if startDate == "" || endDate == "" {
+		respondError(c, http.StatusBadRequest, "start_date and end_date are required")
+		return
+	}
+
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid start_date format, use YYYY-MM-DD")
+		return
+	}
+	end, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid end_date format, use YYYY-MM-DD")
+		return
+	}
+
+	walletID := int64(queryInt(c, "wallet_id", 0))
+	limit := queryInt(c, "limit", 50)
+	offset := queryInt(c, "offset", 0)
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+
+	rows, err := h.queries.ListAggregatedWalletTransactions(c, db.ListAggregatedWalletTransactionsParams{
+		UserID:            userID,
+		TransactionTime:   start,
+		TransactionTime_2: end,
+		Column4:           walletID,
+		Limit:             int32(limit),
+		Offset:            int32(offset),
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "failed to load transactions")
+		return
+	}
+
+	result := make([]aggregatedWalletTxResponse, len(rows))
+	for i, tx := range rows {
+		var catName *string
+		if tx.CategoryName.Valid {
+			s := tx.CategoryName.String
+			catName = &s
+		}
+		var relName *string
+		if tx.RelatedWalletName.Valid {
+			s := tx.RelatedWalletName.String
+			relName = &s
+		}
+		var brokerRate *string
+		if tx.BrokerRate.Valid {
+			s := tx.BrokerRate.String
+			brokerRate = &s
+		}
+		var note *string
+		if tx.Note.Valid {
+			s := tx.Note.String
+			note = &s
+		}
+		var catID *int64
+		if tx.CategoryID.Valid {
+			v := tx.CategoryID.Int64
+			catID = &v
+		}
+		var relWalletID *int64
+		if tx.RelatedWalletID.Valid {
+			v := tx.RelatedWalletID.Int64
+			relWalletID = &v
+		}
+		var relPortfolioID *int64
+		if tx.RelatedPortfolioID.Valid {
+			v := tx.RelatedPortfolioID.Int64
+			relPortfolioID = &v
+		}
+		var pairedID *int64
+		if tx.PairedTransactionID.Valid {
+			v := tx.PairedTransactionID.Int64
+			pairedID = &v
+		}
+		result[i] = aggregatedWalletTxResponse{
+			ID:                  tx.ID,
+			WalletID:            tx.WalletID,
+			WalletName:          tx.WalletName,
+			Type:                tx.Type,
+			Amount:              tx.Amount,
+			CategoryID:          catID,
+			RelatedWalletID:     relWalletID,
+			RelatedPortfolioID:  relPortfolioID,
+			PairedTransactionID: pairedID,
+			BrokerRate:          brokerRate,
+			Note:                note,
+			TransactionTime:     tx.TransactionTime.Format("2006-01-02T15:04:05Z07:00"),
+			CategoryName:        catName,
+			RelatedWalletName:   relName,
+		}
+	}
+
+	c.JSON(http.StatusOK, result)
 }
