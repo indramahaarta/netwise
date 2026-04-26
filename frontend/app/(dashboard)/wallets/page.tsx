@@ -247,8 +247,12 @@ export default function WalletsPage() {
     100,
   )
 
-  const totalIncome = summary ? parseFloat(summary.total_income) : 0
-  const totalExpense = summary ? parseFloat(summary.total_expense) : 0
+  const totalIncome = summary
+    ? parseFloat(selectedWallet === null ? summary.total_income : summary.income)
+    : 0
+  const totalExpense = summary
+    ? parseFloat(selectedWallet === null ? summary.total_expense : summary.expense)
+    : 0
   const net = totalIncome - totalExpense
 
   const chartData = useMemo(() => {
@@ -259,17 +263,9 @@ export default function WalletsPage() {
     }))
   }, [snapshots])
 
-  const incomeExpenseData = useMemo(() => {
-    if (!summary) return []
-    return [
-      { name: 'Income', value: Math.abs(parseFloat(summary.total_income)) },
-      { name: 'Expense', value: Math.abs(parseFloat(summary.total_expense)) },
-    ]
-  }, [summary])
-
   const categoryData = useMemo(() => {
     if (!categories) return []
-    return (categories as any[]).slice(0, 5).map((cat: any) => ({
+    return (categories as any[]).map((cat: any) => ({
       name: cat.category_name,
       value: Math.abs(parseFloat(cat.total)),
       type: cat.category_type,
@@ -528,35 +524,11 @@ export default function WalletsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
             {/* Left / top: charts */}
             <div className="space-y-4 lg:col-span-2">
-              {/* Income vs Expense */}
-              {(totalIncome > 0 || totalExpense > 0) && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Income vs Expense</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={160}>
-                      <BarChart data={incomeExpenseData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                        <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: any) => formatAmountCompact(v)} width={55} />
-                        <Tooltip formatter={(v: any) => fmtAmt(v, 'IDR')} contentStyle={tooltipStyle} />
-                        <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                          {incomeExpenseData.map((entry, i) => (
-                            <Cell key={i} fill={entry.name === 'Income' ? '#10b981' : '#ef4444'} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
-
               {/* Category breakdown */}
               {categoryData.length > 0 && (
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Top Categories</CardTitle>
+                    <CardTitle className="text-sm">Categories</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={160}>

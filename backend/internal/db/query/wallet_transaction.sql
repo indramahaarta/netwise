@@ -145,5 +145,4 @@ WHERE w.user_id = $1
   AND wt.transaction_time < $3
   AND wt.type IN ('INCOME', 'EXPENSE')
 GROUP BY wc.id, wc.name, wc.type
-ORDER BY total DESC
-LIMIT 5;
+ORDER BY total DESC;
