@@ -3,47 +3,46 @@
 import { use, useState, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, startOfDay, endOfDay, addMonths, subMonths, addDays, startOfYear, addYears } from 'date-fns'
+import {
+  format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, startOfDay,
+  addMonths, addDays, startOfYear, addYears, startOfWeek, endOfWeek, subDays,
+} from 'date-fns'
 import {
   useWallet,
   useWalletCategories,
   useAddWalletTransaction,
   useDeleteWallet,
   useUpdateWalletTransaction,
+  useUpdateWalletTransfer,
   useDeleteWalletTransaction,
   useWalletSummary,
   useWalletCategoryBreakdown,
   useWalletTransactionsByDateRange,
+  useWalletSnapshots,
   useTransferWallets,
-  useWalletToPortfolio,
-  usePortfolioToWallet,
+  useWallets,
+  useCreateWalletCategory,
 } from '@/hooks/use-wallets'
-import { useWallets, useCreateWalletCategory } from '@/hooks/use-wallets'
-import { usePortfolios } from '@/hooks/use-portfolios'
-import { formatAmount, formatAmountCompact, formatNumberInput, formatNumberBlur, parseNumberInput } from '@/lib/number-format'
+import { formatAmountCompact, formatNumberInput, formatNumberBlur, parseNumberInput } from '@/lib/number-format'
 import { useAmount } from '@/context/ui-settings'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend, Cell
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Cell,
 } from 'recharts'
-import { ArrowLeft, TrendingUp, TrendingDown, ArrowLeftRight, Building2, Wallet, Plus, ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from 'lucide-react'
+import {
+  ArrowLeft, TrendingUp, TrendingDown, ArrowLeftRight,
+  Plus, CalendarIcon, X, ArrowDownLeft, ArrowUpRight,
+} from 'lucide-react'
 import type { WalletTransaction } from '@/lib/types'
 
-function fmtDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
+const COLORS = ['#ef4444', '#10b981', '#f59e0b', '#06b6d4', '#8b5cf6', '#ec4899']
 
 const tooltipStyle = {
   backgroundColor: 'hsl(var(--popover))',
@@ -53,31 +52,34 @@ const tooltipStyle = {
   fontSize: 12,
 }
 
-function txSign(tx: WalletTransaction) {
-  return ['INCOME', 'TRANSFER_IN', 'PORTFOLIO_WITHDRAWAL'].includes(tx.type) ? '+' : '-'
-}
+type Period = 'day' | 'week' | 'month' | 'year' | 'range'
+type ActionType = 'income' | 'expense' | 'transfer' | null
 
-function txColor(tx: WalletTransaction) {
-  return ['INCOME', 'TRANSFER_IN', 'PORTFOLIO_WITHDRAWAL'].includes(tx.type)
-    ? 'text-green-600'
-    : 'text-destructive'
-}
-
-function txLabel(tx: WalletTransaction) {
-  switch (tx.type) {
-    case 'INCOME': return tx.category_name ?? 'Income'
-    case 'EXPENSE': return tx.category_name ?? 'Expense'
-    case 'TRANSFER_IN': return `From ${tx.related_wallet_name ?? 'wallet'}`
-    case 'TRANSFER_OUT': return `To ${tx.related_wallet_name ?? 'wallet'}`
-    case 'PORTFOLIO_DEPOSIT': return 'To Portfolio'
-    case 'PORTFOLIO_WITHDRAWAL': return 'From Portfolio'
-    default: return tx.type
+function txTypeIcon(type: string) {
+  switch (type) {
+    case 'INCOME': case 'TRANSFER_IN': case 'PORTFOLIO_WITHDRAWAL':
+      return <ArrowDownLeft className="h-3.5 w-3.5 text-emerald-500" />
+    case 'EXPENSE': case 'TRANSFER_OUT': case 'PORTFOLIO_DEPOSIT':
+      return <ArrowUpRight className="h-3.5 w-3.5 text-red-500" />
+    default: return null
   }
 }
 
-type ActionType = 'income' | 'expense' | 'transfer' | 'portfolio-deposit' | 'portfolio-withdraw' | 'import' | null
+function txTypeLabel(type: string, relatedWalletName?: string | null) {
+  switch (type) {
+    case 'INCOME': return 'Income'
+    case 'EXPENSE': return 'Expense'
+    case 'TRANSFER_IN': return relatedWalletName ? `From ${relatedWalletName}` : 'Transfer In'
+    case 'TRANSFER_OUT': return relatedWalletName ? `To ${relatedWalletName}` : 'Transfer Out'
+    case 'PORTFOLIO_DEPOSIT': return 'Portfolio Deposit'
+    case 'PORTFOLIO_WITHDRAWAL': return 'Portfolio Withdrawal'
+    default: return type
+  }
+}
 
-const COLORS = ['#ef4444', '#10b981', '#f59e0b', '#06b6d4', '#8b5cf6', '#ec4899']
+function isPositive(type: string) {
+  return type === 'INCOME' || type === 'TRANSFER_IN' || type === 'PORTFOLIO_WITHDRAWAL'
+}
 
 export default function WalletDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -87,64 +89,118 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
   const { data: wallet, isLoading: wLoading } = useWallet(id)
   const { data: categories } = useWalletCategories()
   const { data: wallets } = useWallets()
-  const { data: portfolios } = usePortfolios()
 
   const addTx = useAddWalletTransaction(id)
-  const updateTx = useUpdateWalletTransaction(id, 0)
   const deleteTx = useDeleteWalletTransaction(id)
   const deleteWallet = useDeleteWallet(id)
   const createCategory = useCreateWalletCategory()
   const transferWallets = useTransferWallets()
 
-  // Calendar state
+  // Period state
+  const [period, setPeriod] = useState<Period>('day')
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [rangeStart, setRangeStart] = useState(subDays(new Date(), 30))
+  const [rangeEnd, setRangeEnd] = useState(new Date())
+  const [rangeStartOpen, setRangeStartOpen] = useState(false)
+  const [rangeEndOpen, setRangeEndOpen] = useState(false)
+  const [chartRange, setChartRange] = useState('1M')
+
+  // Calendar selection (for double-tap to add)
   const [selectedDate, setSelectedDate] = useState(new Date())
-  const [period, setPeriod] = useState<'day' | 'month' | 'year'>('month')
+
+  // Add transaction state
+  const [showTypeDialog, setShowTypeDialog] = useState(false)
+  const [action, setAction] = useState<ActionType>(null)
+  const [amount, setAmount] = useState('')
+  const [categoryId, setCategoryId] = useState('')
+  const [note, setNote] = useState('')
+  const [toWalletId, setToWalletId] = useState('')
+  const [txDate, setTxDate] = useState<Date>(new Date())
+  const [txDateOpen, setTxDateOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [showNewCatForm, setShowNewCatForm] = useState(false)
   const [newCatName, setNewCatName] = useState('')
-  const [newCatType, setNewCatType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
+  const lastTapRef = useRef<number>(0)
+
+  // Edit/delete state
+  const [actionTx, setActionTx] = useState<WalletTransaction | null>(null)
+  const [showEditSheet, setShowEditSheet] = useState(false)
+  const [editAmount, setEditAmount] = useState('')
+  const [editCategoryId, setEditCategoryId] = useState('')
+  const [editNote, setEditNote] = useState('')
+  const [editDate, setEditDate] = useState<Date>(new Date())
+  const [editDateOpen, setEditDateOpen] = useState(false)
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState('')
+
+  const updateTx = useUpdateWalletTransaction(actionTx?.wallet_id ?? id, actionTx?.id ?? 0)
+  const updateTransfer = useUpdateWalletTransfer(actionTx?.wallet_id ?? id, actionTx?.id ?? 0)
+
+  // Date range for the selected period
+  const dateRange = useMemo(() => {
+    if (period === 'day') {
+      return { start: format(currentMonth, 'yyyy-MM-dd'), end: format(addDays(currentMonth, 1), 'yyyy-MM-dd') }
+    } else if (period === 'week') {
+      return {
+        start: format(startOfWeek(currentMonth), 'yyyy-MM-dd'),
+        end: format(addDays(endOfWeek(currentMonth), 1), 'yyyy-MM-dd'),
+      }
+    } else if (period === 'month') {
+      return {
+        start: format(startOfMonth(currentMonth), 'yyyy-MM-dd'),
+        end: format(addDays(endOfMonth(currentMonth), 1), 'yyyy-MM-dd'),
+      }
+    } else if (period === 'year') {
+      const ys = startOfYear(currentMonth)
+      return { start: format(ys, 'yyyy-MM-dd'), end: format(addYears(ys, 1), 'yyyy-MM-dd') }
+    } else {
+      return { start: format(rangeStart, 'yyyy-MM-dd'), end: format(addDays(rangeEnd, 1), 'yyyy-MM-dd') }
+    }
+  }, [period, currentMonth, rangeStart, rangeEnd])
+
+  // Snapshot chart date range
+  const snapshotDateRange = useMemo(() => {
+    const today = new Date()
+    const to = format(today, 'yyyy-MM-dd')
+    switch (chartRange) {
+      case '1W': return { from: format(subDays(today, 7), 'yyyy-MM-dd'), to }
+      case '3M': return { from: format(subDays(today, 90), 'yyyy-MM-dd'), to }
+      case 'YTD': return { from: format(startOfYear(today), 'yyyy-MM-dd'), to }
+      case '1Y': return { from: format(subDays(today, 365), 'yyyy-MM-dd'), to }
+      case 'ALL': return { from: '2000-01-01', to }
+      default: return { from: format(subDays(today, 30), 'yyyy-MM-dd'), to }
+    }
+  }, [chartRange])
+
+  // Month-wide query for calendar dots (always one calendar month)
   const monthStart = startOfMonth(currentMonth)
-  const monthEnd = endOfMonth(currentMonth)
+  const monthFrom = format(monthStart, 'yyyy-MM-dd')
+  const monthTo = format(addMonths(monthStart, 1), 'yyyy-MM-dd')
+  const { data: allTxs } = useWalletTransactionsByDateRange(id, monthFrom, monthTo)
 
-  // Date range for fetching data
-  const fromDate = format(monthStart, 'yyyy-MM-dd')
-  const toDate = format(addMonths(monthEnd, 1), 'yyyy-MM-dd')
+  // Period-scoped queries
+  const { data: snapshots, isLoading: snapshotsLoading } = useWalletSnapshots(id, snapshotDateRange.from, snapshotDateRange.to)
+  const { data: summary, isLoading: summaryLoading } = useWalletSummary(id, dateRange.start, dateRange.end)
+  const { data: categoryBreakdown } = useWalletCategoryBreakdown(id, dateRange.start, dateRange.end)
+  const { data: periodTxs, isLoading: txLoading } = useWalletTransactionsByDateRange(id, dateRange.start, dateRange.end)
 
-  // Summary date range based on period
-  const summaryFrom = useMemo(() => {
-    if (period === 'day') return format(selectedDate, 'yyyy-MM-dd')
-    if (period === 'month') return format(startOfMonth(currentMonth), 'yyyy-MM-dd')
-    return format(startOfYear(currentMonth), 'yyyy-MM-dd')
-  }, [period, selectedDate, currentMonth])
+  const totalIncome = summary ? parseFloat(summary.income) : 0
+  const totalExpense = summary ? parseFloat(summary.expense) : 0
+  const net = totalIncome - totalExpense
 
-  const summaryTo = useMemo(() => {
-    if (period === 'day') return format(addDays(selectedDate, 1), 'yyyy-MM-dd')
-    if (period === 'month') return format(addMonths(startOfMonth(currentMonth), 1), 'yyyy-MM-dd')
-    return format(addYears(startOfYear(currentMonth), 1), 'yyyy-MM-dd')
-  }, [period, selectedDate, currentMonth])
+  const daysWithTx = useMemo(() => {
+    if (!allTxs) return new Set<number>()
+    return new Set<number>(allTxs.map((tx) => startOfDay(new Date(tx.transaction_time)).getTime()))
+  }, [allTxs])
 
-  // Fetch transactions for the month
-  const { data: allTxs } = useWalletTransactionsByDateRange(id, fromDate, toDate)
+  const chartData = useMemo(() => {
+    if (!snapshots) return []
+    return (snapshots as any[]).map((s) => ({
+      date: new Date(s.snapshot_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      balance: parseFloat(s.balance),
+    }))
+  }, [snapshots])
 
-  // Get transactions for the selected day
-  const selectedDayTxs = useMemo(() => {
-    if (!allTxs) return []
-    const dayStart = startOfDay(selectedDate)
-    const dayEnd = endOfDay(selectedDate)
-    return allTxs.filter((tx) => {
-      const txDate = new Date(tx.transaction_time)
-      return txDate >= dayStart && txDate <= dayEnd
-    })
-  }, [allTxs, selectedDate])
-
-  // Get summary for the selected period
-  const { data: summary } = useWalletSummary(id, summaryFrom, summaryTo)
-
-  // Get category breakdown for the selected period
-  const { data: categoryBreakdown } = useWalletCategoryBreakdown(id, summaryFrom, summaryTo)
-
-
-  // Income vs Expense chart data
   const incomeExpenseData = useMemo(() => {
     if (!summary) return []
     return [
@@ -153,7 +209,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
     ]
   }, [summary])
 
-  // Category breakdown data
   const categoryData = useMemo(() => {
     if (!categoryBreakdown) return []
     return categoryBreakdown.slice(0, 5).map((cat: any) => ({
@@ -163,46 +218,72 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
     }))
   }, [categoryBreakdown])
 
-  // Get days with transactions
-  const daysWithTx = useMemo(() => {
-    if (!allTxs) return new Set()
-    return new Set(
-      allTxs.map((tx) => startOfDay(new Date(tx.transaction_time)).getTime())
-    )
-  }, [allTxs])
-
-  // Form state
-  const [action, setAction] = useState<ActionType>(null)
-  const [editingTx, setEditingTx] = useState<WalletTransaction | null>(null)
-  const [amount, setAmount] = useState('')
-  const [categoryId, setCategoryId] = useState('')
-  const [note, setNote] = useState('')
-  const [toWalletId, setToWalletId] = useState('')
-  const [portfolioId, setPortfolioId] = useState('')
-  const [brokerRate, setBrokerRate] = useState('')
-  const [txDate, setTxDate] = useState<Date>(new Date())
-  const [txDateOpen, setTxDateOpen] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [swipeOffsets, setSwipeOffsets] = useState<{ [key: number]: number }>({})
-  const [swipeStartX, setSwipeStartX] = useState<{ [key: number]: number }>({})
-  const [showTypeDialog, setShowTypeDialog] = useState(false)
-  const lastTapRef = useRef<number>(0)
-
   const incomeCategories = (categories ?? []).filter((c) => c.type === 'INCOME')
   const expenseCategories = (categories ?? []).filter((c) => c.type === 'EXPENSE')
   const otherWallets = (wallets ?? []).filter((w) => String(w.id) !== id)
+
+  function openEdit(tx: WalletTransaction) {
+    setActionTx(tx)
+    setEditAmount(tx.amount)
+    setEditCategoryId(tx.category_id ? String(tx.category_id) : '')
+    setEditNote(tx.note ?? '')
+    setEditDate(new Date(tx.transaction_time))
+    setEditError('')
+    setShowEditSheet(true)
+  }
+
+  function closeEdit() {
+    setShowEditSheet(false)
+    setActionTx(null)
+    setEditError('')
+  }
+
+  async function handleEditSave() {
+    if (!actionTx) return
+    setEditSaving(true)
+    setEditError('')
+    try {
+      const isTransfer = actionTx.type === 'TRANSFER_IN' || actionTx.type === 'TRANSFER_OUT'
+      if (isTransfer) {
+        await updateTransfer.mutateAsync({
+          amount: parseNumberInput(editAmount),
+          note: editNote || undefined,
+          transaction_time: format(editDate, 'yyyy-MM-dd'),
+        })
+      } else {
+        await updateTx.mutateAsync({
+          type: actionTx.type as 'INCOME' | 'EXPENSE',
+          amount: parseNumberInput(editAmount),
+          category_id: parseInt(editCategoryId),
+          note: editNote || undefined,
+          transaction_time: format(editDate, 'yyyy-MM-dd'),
+        })
+      }
+      closeEdit()
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } } }
+      setEditError(e.response?.data?.error || 'Failed to save')
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  async function handleDeleteTx(tx: WalletTransaction) {
+    if (!confirm('Delete this transaction? For transfers, the paired transaction will also be removed.')) return
+    await deleteTx.mutateAsync(tx.id)
+    setActionTx(null)
+  }
 
   function resetForm() {
     setAmount('')
     setCategoryId('')
     setNote('')
     setToWalletId('')
-    setPortfolioId('')
-    setBrokerRate('')
     setTxDate(new Date())
     setAction(null)
-    setEditingTx(null)
     setShowTypeDialog(false)
+    setShowNewCatForm(false)
+    setNewCatName('')
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -211,21 +292,15 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
     if ((action === 'income' || action === 'expense') && !categoryId) return
     if (action === 'transfer' && !toWalletId) return
     setSaving(true)
-
     try {
       if (action === 'income' || action === 'expense') {
-        const txData = {
-          type: action === 'income' ? 'INCOME' as const : 'EXPENSE' as const,
+        await addTx.mutateAsync({
+          type: action === 'income' ? 'INCOME' : 'EXPENSE',
           amount: parseNumberInput(amount),
           category_id: parseInt(categoryId),
           note,
           transaction_time: format(txDate, 'yyyy-MM-dd'),
-        }
-        if (editingTx) {
-          await updateTx.mutateAsync(txData)
-        } else {
-          await addTx.mutateAsync(txData)
-        }
+        })
       } else if (action === 'transfer') {
         await transferWallets.mutateAsync({
           from_wallet_id: parseInt(id),
@@ -235,7 +310,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
           transaction_time: format(txDate, 'yyyy-MM-dd'),
         })
       }
-      setShowTypeDialog(false)
       resetForm()
     } catch {
       // error handled by mutations
@@ -250,26 +324,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
     router.push('/wallets')
   }
 
-  function handleTxSwipe(txId: number, startX: number, currentX: number) {
-    const offset = currentX - startX
-    const threshold = 60
-
-    if (Math.abs(offset) > threshold) {
-      setSwipeOffsets({ ...swipeOffsets, [txId]: offset < 0 ? -80 : 0 })
-    } else {
-      setSwipeOffsets({ ...swipeOffsets, [txId]: 0 })
-    }
-  }
-
-  function openEditForm(tx: WalletTransaction) {
-    setEditingTx(tx)
-    setAction(tx.type === 'INCOME' ? 'income' : 'expense')
-    setAmount(tx.amount)
-    setCategoryId(String(tx.category_id))
-    setNote(tx.note ?? '')
-    setTxDate(new Date(tx.transaction_time))
-  }
-
   if (wLoading) {
     return (
       <div className="p-6 space-y-4">
@@ -282,15 +336,12 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
 
   if (!wallet) return null
 
-  const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd })
+  const daysInMonth = eachDayOfInterval({ start: monthStart, end: endOfMonth(currentMonth) })
   const firstDayOfWeek = monthStart.getDay()
-  const calendarDays = [
-    ...Array(firstDayOfWeek).fill(null),
-    ...daysInMonth,
-  ]
+  const calendarDays = [...Array(firstDayOfWeek).fill(null), ...daysInMonth]
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 pb-28 md:pb-6 space-y-4 md:space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -308,344 +359,416 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
           <Link href={`/wallets/${id}/categories`}>
             <Button size="sm" variant="outline">Manage Categories</Button>
           </Link>
-          <Button variant="destructive" size="sm" onClick={handleDelete}>
-          Delete
-        </Button>
+          <Button variant="destructive" size="sm" onClick={handleDelete}>Delete</Button>
         </div>
       </div>
 
-      {/* Balance card */}
+      {/* Current Balance */}
       <Card>
-        <CardContent className="pt-6 pb-6">
-          <p className="text-xs text-muted-foreground">Current Balance</p>
+        <CardContent className="pt-5 pb-5">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Current Balance</p>
           <p className="text-3xl font-bold mt-1">{fmtAmt(wallet.balance ?? '0', 'IDR')}</p>
         </CardContent>
       </Card>
 
-      {/* Calendar & Summary */}
+      {/* Balance Over Time */}
       <Card>
-        <CardHeader>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-sm">Calendar</CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">Single click to view transactions • Double click to add</p>
-              </div>
-            </div>
-
-            {/* Period toggle */}
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex gap-1 bg-muted rounded-md p-1">
-                <Button
-                  size="sm"
-                  variant={period === 'day' ? 'default' : 'ghost'}
-                  className="text-xs"
-                  onClick={() => setPeriod('day')}
-                >
-                  Day
-                </Button>
-                <Button
-                  size="sm"
-                  variant={period === 'month' ? 'default' : 'ghost'}
-                  className="text-xs"
-                  onClick={() => setPeriod('month')}
-                >
-                  Month
-                </Button>
-                <Button
-                  size="sm"
-                  variant={period === 'year' ? 'default' : 'ghost'}
-                  className="text-xs"
-                  onClick={() => setPeriod('year')}
-                >
-                  Year
-                </Button>
-              </div>
-
-              {/* Navigation */}
-              <div className="flex gap-2 items-center">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    if (period === 'day') setCurrentMonth(subMonths(selectedDate, 1))
-                    else if (period === 'month') setCurrentMonth(subMonths(currentMonth, 1))
-                    else setCurrentMonth(subMonths(currentMonth, 12))
-                  }}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span className="text-sm font-medium w-32 text-center">
-                  {period === 'day' ? format(selectedDate, 'MMM d, yyyy') :
-                   period === 'month' ? format(currentMonth, 'MMMM yyyy') :
-                   format(currentMonth, 'yyyy')}
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    if (period === 'day') setCurrentMonth(addMonths(selectedDate, 1))
-                    else if (period === 'month') setCurrentMonth(addMonths(currentMonth, 1))
-                    else setCurrentMonth(addMonths(currentMonth, 12))
-                  }}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+        <CardHeader className="pb-2 space-y-2">
+          <CardTitle className="text-sm">Balance Over Time</CardTitle>
+          <div className="flex flex-wrap gap-1">
+            {['1W', '1M', '3M', 'YTD', '1Y', 'ALL'].map((r) => (
+              <button
+                key={r}
+                onClick={() => setChartRange(r)}
+                className={`rounded px-2 py-0.5 text-xs font-medium transition-colors
+                  ${chartRange === r ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
+              >
+                {r}
+              </button>
+            ))}
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Calendar grid */}
-          <div>
-            {/* Day headers */}
-            <div className="grid grid-cols-7 gap-1 mb-2">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                <div key={day} className="text-xs font-medium text-center text-muted-foreground py-1">
-                  {day}
-                </div>
-              ))}
-            </div>
+        <CardContent>
+          {snapshotsLoading ? (
+            <Skeleton className="h-52 w-full" />
+          ) : chartData.length === 0 ? (
+            <div className="h-52 flex items-center justify-center text-muted-foreground text-sm">No data yet</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: any) => formatAmountCompact(v)} width={55} />
+                <Tooltip formatter={(v: any) => fmtAmt(v, 'IDR')} contentStyle={tooltipStyle} />
+                <Line type="monotone" dataKey="balance" stroke="#3b82f6" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
 
-            {/* Calendar days */}
-            <div className="grid grid-cols-7 gap-1">
-              {calendarDays.map((day, idx) => {
-                const hasTx = day && daysWithTx.has(startOfDay(day).getTime())
-                const isSelected = day && isSameDay(day, selectedDate)
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => day && setSelectedDate(day)}
-                    onDoubleClick={(e) => {
-                      e.preventDefault()
-                      if (day) {
-                        setSelectedDate(day)
-                        setTxDate(day)
-                        setShowTypeDialog(true)
-                      }
-                    }}
-                    onTouchEnd={(e) => {
-                      if (!day) return
-                      const now = Date.now()
-                      if (now - lastTapRef.current < 300) {
-                        e.preventDefault()
-                        setSelectedDate(day)
-                        setTxDate(day)
-                        setShowTypeDialog(true)
-                      }
-                      lastTapRef.current = now
-                    }}
-                    className={`aspect-square rounded text-sm font-medium transition cursor-pointer ${
-                      !day ? '' :
-                      isSelected ? 'bg-primary text-primary-foreground' :
-                      hasTx ? 'bg-muted border-2 border-primary' :
-                      'hover:bg-muted'
-                    }`}
-                  >
-                    {day ? day.getDate() : ''}
-                  </button>
-                )
-              })}
-            </div>
+      {/* Period selector */}
+      <Card>
+        <CardContent className="pt-4 pb-4 space-y-3">
+          <div className="grid grid-cols-5 gap-1 bg-muted rounded-md p-1">
+            {(['day', 'week', 'month', 'year', 'range'] as Period[]).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`rounded-sm py-1 text-xs font-medium transition-colors capitalize
+                  ${period === p
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                  }`}
+              >
+                {p}
+              </button>
+            ))}
           </div>
 
-          {/* Period summary */}
-          {summary && (
-            <div className="border-t pt-4 space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Income</span>
-                <span className="text-sm font-medium text-green-600">{fmtAmt(summary.income, 'IDR')}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Expense</span>
-                <span className="text-sm font-medium text-destructive">{fmtAmt(summary.expense, 'IDR')}</span>
-              </div>
-              <div className="flex justify-between items-center border-t pt-2">
-                <span className="text-sm font-medium">Net</span>
-                <span className={`text-sm font-semibold ${parseFloat(summary.net) >= 0 ? 'text-green-600' : 'text-destructive'}`}>
-                  {fmtAmt(summary.net, 'IDR')}
-                </span>
-              </div>
+          {period === 'day' && (
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentMonth((m) => addDays(m, -1))}
+                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded"
+              >
+                ← Prev
+              </button>
+              <span className="text-xs font-medium">{format(currentMonth, 'EEE, MMM d, yyyy')}</span>
+              <button
+                onClick={() => setCurrentMonth((m) => addDays(m, 1))}
+                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded"
+              >
+                Next →
+              </button>
             </div>
           )}
 
-          {/* Category breakdown list */}
-          {categoryBreakdown && categoryBreakdown.length > 0 && (
-            <div className="border-t pt-4 space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">By Category</p>
-              {categoryBreakdown.map((cat: any) => (
-                <div key={cat.category_id} className="flex items-center justify-between">
-                  <span className="text-sm">{cat.category_name}</span>
-                  <span className={`text-sm font-medium ${cat.category_type === 'INCOME' ? 'text-green-600' : 'text-destructive'}`}>
-                    {cat.category_type === 'EXPENSE' ? '-' : '+'}{fmtAmt(cat.total, 'IDR')}
-                  </span>
-                </div>
-              ))}
+          {period === 'week' && (
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentMonth((m) => addDays(m, -7))}
+                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded"
+              >
+                ← Prev
+              </button>
+              <span className="text-xs font-medium">
+                {format(startOfWeek(currentMonth), 'MMM d')} – {format(endOfWeek(currentMonth), 'MMM d, yyyy')}
+              </span>
+              <button
+                onClick={() => setCurrentMonth((m) => addDays(m, 7))}
+                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded"
+              >
+                Next →
+              </button>
+            </div>
+          )}
+
+          {period === 'month' && (
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentMonth((m) => addMonths(m, -1))}
+                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded"
+              >
+                ← Prev
+              </button>
+              <span className="text-xs font-medium">{format(currentMonth, 'MMMM yyyy')}</span>
+              <button
+                onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
+                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded"
+              >
+                Next →
+              </button>
+            </div>
+          )}
+
+          {period === 'year' && (
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentMonth((m) => addMonths(m, -12))}
+                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded"
+              >
+                ← Prev
+              </button>
+              <span className="text-xs font-medium">{format(currentMonth, 'yyyy')}</span>
+              <button
+                onClick={() => setCurrentMonth((m) => addMonths(m, 12))}
+                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded"
+              >
+                Next →
+              </button>
+            </div>
+          )}
+
+          {period === 'range' && (
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">From</p>
+                <Popover open={rangeStartOpen} onOpenChange={setRangeStartOpen}>
+                  <PopoverTrigger>
+                    <div className="w-full inline-flex items-center rounded-md border border-input bg-background px-2 py-1.5 text-xs gap-1.5">
+                      <CalendarIcon className="h-3 w-3 shrink-0" />
+                      <span>{format(rangeStart, 'MMM d, yyyy')}</span>
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar mode="single" selected={rangeStart} onSelect={(d) => { if (d) { setRangeStart(d); setRangeStartOpen(false) } }} />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">To</p>
+                <Popover open={rangeEndOpen} onOpenChange={setRangeEndOpen}>
+                  <PopoverTrigger>
+                    <div className="w-full inline-flex items-center rounded-md border border-input bg-background px-2 py-1.5 text-xs gap-1.5">
+                      <CalendarIcon className="h-3 w-3 shrink-0" />
+                      <span>{format(rangeEnd, 'MMM d, yyyy')}</span>
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar mode="single" selected={rangeEnd} onSelect={(d) => { if (d) { setRangeEnd(d); setRangeEndOpen(false) } }} />
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Selected day transactions */}
-      <div className="space-y-3">
-        <h2 className="text-lg font-semibold">
-          {format(selectedDate, 'MMM d, yyyy')} — {selectedDayTxs.length} transaction{selectedDayTxs.length !== 1 ? 's' : ''}
-        </h2>
+      {/* KPI tiles */}
+      <div className="grid grid-cols-3 gap-3">
+        <Card>
+          <CardContent className="pt-3 pb-3">
+            <p className="text-xs text-muted-foreground">Income</p>
+            {summaryLoading
+              ? <Skeleton className="h-5 w-full mt-1" />
+              : <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 truncate" title={fmtAmt(totalIncome, 'IDR')}>
+                  {formatAmountCompact(totalIncome)}
+                </p>}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-3 pb-3">
+            <p className="text-xs text-muted-foreground">Expense</p>
+            {summaryLoading
+              ? <Skeleton className="h-5 w-full mt-1" />
+              : <p className="text-sm font-semibold text-red-600 dark:text-red-400 mt-0.5 truncate" title={fmtAmt(totalExpense, 'IDR')}>
+                  {formatAmountCompact(totalExpense)}
+                </p>}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-3 pb-3">
+            <p className="text-xs text-muted-foreground">Net</p>
+            {summaryLoading
+              ? <Skeleton className="h-5 w-full mt-1" />
+              : <p className={`text-sm font-semibold mt-0.5 truncate ${net >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`} title={`${net >= 0 ? '+' : ''}${fmtAmt(net, 'IDR')}`}>
+                  {net >= 0 ? '+' : '-'}{formatAmountCompact(Math.abs(net))}
+                </p>}
+          </CardContent>
+        </Card>
+      </div>
 
-        {selectedDayTxs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No transactions on this day.</p>
-        ) : (
-          <div className="space-y-2">
-            {selectedDayTxs.map((tx) => (
-              <div
-                key={tx.id}
-                className="relative overflow-hidden rounded-lg border"
-                onMouseDown={(e) => {
-                  if (e.button === 0) setSwipeStartX({ ...swipeStartX, [tx.id]: e.clientX })
-                }}
-                onMouseMove={(e) => {
-                  if (swipeStartX[tx.id] !== undefined) {
-                    handleTxSwipe(tx.id, swipeStartX[tx.id], e.clientX)
-                  }
-                }}
-                onMouseUp={() => {
-                  setSwipeStartX({})
-                }}
-                onTouchStart={(e) => {
-                  setSwipeStartX({ ...swipeStartX, [tx.id]: e.touches[0].clientX })
-                }}
-                onTouchMove={(e) => {
-                  if (swipeStartX[tx.id] !== undefined) {
-                    handleTxSwipe(tx.id, swipeStartX[tx.id], e.touches[0].clientX)
-                  }
-                }}
-                onTouchEnd={() => {
-                  setSwipeStartX({})
-                }}
-              >
-                {/* Delete/Edit buttons (revealed on swipe) */}
-                <div className="absolute inset-y-0 right-0 flex gap-2 bg-muted pr-3 w-[160px] items-center justify-end">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 px-2 text-blue-600 hover:bg-blue-100"
-                    onClick={() => openEditForm(tx)}
+      {/* Main two-column grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+        {/* Left: calendar + charts */}
+        <div className="space-y-4 lg:col-span-2">
+          {/* Calendar */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">Calendar</CardTitle>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentMonth((m) => addMonths(m, -1))}
+                    className="text-xs text-muted-foreground hover:text-foreground px-1"
                   >
-                    Edit
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 px-2 text-destructive hover:bg-red-100"
-                    onClick={async () => {
-                      if (confirm('Delete this transaction?')) {
-                        await deleteTx.mutateAsync(tx.id)
-                      }
-                    }}
+                    ←
+                  </button>
+                  <span className="text-xs font-medium">{format(currentMonth, 'MMMM yyyy')}</span>
+                  <button
+                    onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
+                    className="text-xs text-muted-foreground hover:text-foreground px-1"
                   >
-                    Delete
-                  </Button>
-                </div>
-
-                {/* Transaction card (swipeable) */}
-                <div
-                  className="bg-background p-4 transition-transform"
-                  style={{
-                    transform: `translateX(${swipeOffsets[tx.id] || 0}px)`,
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">{txLabel(tx)}</p>
-                      <p className="text-xs text-muted-foreground">{format(new Date(tx.transaction_time), 'HH:mm')}</p>
-                      {tx.note && <p className="text-xs text-muted-foreground mt-0.5">{tx.note}</p>}
-                    </div>
-                    <p className={`text-sm font-semibold ${txColor(tx)}`}>
-                      {txSign(tx)}{fmtAmt(tx.amount, 'IDR')}
-                    </p>
-                  </div>
+                    →
+                  </button>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Charts */}
-      <div className="space-y-4">
-        {/* Income vs Expense */}
-        {incomeExpenseData.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Income vs Expense</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">Single click to select · Double click to add transaction</p>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={incomeExpenseData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: any) => formatAmountCompact(v)} />
-                  <Tooltip formatter={(v: any) => fmtAmt(v, 'IDR')} contentStyle={tooltipStyle} />
-                  <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-                    {incomeExpenseData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.name === 'Income' ? '#10b981' : '#ef4444'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <div className="grid grid-cols-7 gap-1 mb-2">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                  <div key={day} className="text-xs font-medium text-center text-muted-foreground py-1">{day}</div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {calendarDays.map((day, idx) => {
+                  const hasTx = day && daysWithTx.has(startOfDay(day).getTime())
+                  const isSelected = day && isSameDay(day, selectedDate)
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => day && setSelectedDate(day)}
+                      onDoubleClick={(e) => {
+                        e.preventDefault()
+                        if (day) {
+                          setSelectedDate(day)
+                          setTxDate(day)
+                          setShowTypeDialog(true)
+                        }
+                      }}
+                      onTouchEnd={(e) => {
+                        if (!day) return
+                        const now = Date.now()
+                        if (now - lastTapRef.current < 300) {
+                          e.preventDefault()
+                          setSelectedDate(day)
+                          setTxDate(day)
+                          setShowTypeDialog(true)
+                        }
+                        lastTapRef.current = now
+                      }}
+                      className={`aspect-square rounded text-sm font-medium transition cursor-pointer ${
+                        !day ? '' :
+                        isSelected ? 'bg-primary text-primary-foreground' :
+                        hasTx ? 'bg-muted border-2 border-primary' :
+                        'hover:bg-muted'
+                      }`}
+                    >
+                      {day ? day.getDate() : ''}
+                    </button>
+                  )
+                })}
+              </div>
             </CardContent>
           </Card>
-        )}
 
-        {/* Category breakdown */}
-        {categoryData.length > 0 && (
+          {/* Income vs Expense */}
+          {(totalIncome > 0 || totalExpense > 0) && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Income vs Expense</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={incomeExpenseData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: any) => formatAmountCompact(v)} width={55} />
+                    <Tooltip formatter={(v: any) => fmtAmt(v, 'IDR')} contentStyle={tooltipStyle} />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                      {incomeExpenseData.map((entry, i) => (
+                        <Cell key={i} fill={entry.name === 'Income' ? '#10b981' : '#ef4444'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Top Categories */}
+          {categoryData.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Top Categories</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={categoryData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v: any) => formatAmountCompact(v)} />
+                    <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={90} />
+                    <Tooltip formatter={(v: any) => fmtAmt(v, 'IDR')} contentStyle={tooltipStyle} />
+                    <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+                      {categoryData.map((_, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Right: Transactions feed */}
+        <div className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Category Breakdown (Top 5)</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">
+                Transactions
+                {periodTxs && ` (${periodTxs.length})`}
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={categoryData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v: any) => formatAmountCompact(v)} />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} />
-                  <Tooltip formatter={(v: any) => fmtAmt(v, 'IDR')} contentStyle={tooltipStyle} />
-                  <Bar dataKey="value" radius={[0, 8, 8, 0]}>
-                    {categoryData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <CardContent className="p-0">
+              {txLoading ? (
+                <div className="p-4 space-y-3">
+                  {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
+                </div>
+              ) : !periodTxs || periodTxs.length === 0 ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  No transactions in this period
+                </div>
+              ) : (
+                <ul>
+                  {(periodTxs as WalletTransaction[]).map((tx, idx) => (
+                    <li key={tx.id}>
+                      <button
+                        className={`w-full text-left flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors ${idx !== periodTxs.length - 1 ? 'border-b' : ''}`}
+                        onClick={() => setActionTx(tx)}
+                      >
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${isPositive(tx.type) ? 'bg-emerald-100 dark:bg-emerald-950' : 'bg-red-100 dark:bg-red-950'}`}>
+                          {txTypeIcon(tx.type)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {tx.category_name || txTypeLabel(tx.type, tx.related_wallet_name)}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {format(new Date(tx.transaction_time), 'MMM d')}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className={`text-sm font-semibold ${isPositive(tx.type) ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {isPositive(tx.type) ? '+' : '-'}{fmtAmt(tx.amount, 'IDR')}
+                          </p>
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
-        )}
+        </div>
       </div>
 
-      {/* Add Transaction Modal */}
+      {/* Mobile FAB */}
+      <button
+        onClick={() => setShowTypeDialog(true)}
+        className="fixed bottom-20 right-5 md:hidden z-40 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition-colors"
+        aria-label="Add transaction"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+
+      {/* Add Transaction modal */}
       {showTypeDialog && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4 p-4 overflow-hidden">
-          {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/50"
-            onClick={() => {
-              setShowTypeDialog(false)
-              resetForm()
-            }}
+            onClick={() => { setShowTypeDialog(false); resetForm() }}
           />
-
-          {/* Modal */}
           <div className="relative z-10 w-full md:max-w-sm bg-background rounded-t-xl md:rounded-lg flex flex-col max-h-[85vh] md:max-h-[90vh] mb-20 md:mb-0">
-            {/* Fixed header */}
             <div className="px-6 pt-6 pb-3 border-b shrink-0">
               <h2 className="text-lg font-semibold">Add Transaction</h2>
               <p className="text-sm text-muted-foreground mt-1">{format(txDate, 'MMM d, yyyy')}</p>
             </div>
 
-            {/* Scrollable form fields */}
             <div className="overflow-y-auto flex-1 px-6 py-4 min-h-0 pb-24 md:pb-0">
               <form id="tx-form" onSubmit={handleSubmit} className="space-y-4">
-                {/* Type selector */}
                 <div className="space-y-2">
                   <Label>Type</Label>
                   <div className="flex gap-2">
@@ -679,7 +802,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                   </div>
                 </div>
 
-                {/* Transfer wallet selector */}
                 {action === 'transfer' && (
                   <div className="space-y-1.5">
                     <Label>To Wallet</Label>
@@ -697,7 +819,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                   </div>
                 )}
 
-                {/* Amount */}
                 <div className="space-y-1.5">
                   <Label>Amount (IDR)</Label>
                   <Input
@@ -711,7 +832,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                   />
                 </div>
 
-                {/* Category selector */}
                 {(action === 'income' || action === 'expense') && (
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
@@ -736,7 +856,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                       ))}
                     </select>
 
-                    {/* Inline new category form */}
                     {showNewCatForm && (
                       <div className="space-y-2 border-t pt-3">
                         <Input
@@ -751,11 +870,7 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                             variant="outline"
                             size="sm"
                             className="flex-1"
-                            onClick={() => {
-                              setShowNewCatForm(false)
-                              setNewCatName('')
-                              setNewCatType('EXPENSE')
-                            }}
+                            onClick={() => { setShowNewCatForm(false); setNewCatName('') }}
                           >
                             Cancel
                           </Button>
@@ -787,14 +902,13 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                   </div>
                 )}
 
-                {/* Date picker */}
                 <div className="space-y-1.5">
                   <Label>Date</Label>
                   <Popover open={txDateOpen} onOpenChange={setTxDateOpen}>
                     <PopoverTrigger>
-                      <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        <span className="text-left flex-1">{format(txDate, 'MMM d, yyyy')}</span>
+                      <div className="w-full inline-flex items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm gap-2">
+                        <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                        <span>{format(txDate, 'MMM d, yyyy')}</span>
                       </div>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
@@ -803,7 +917,6 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                   </Popover>
                 </div>
 
-                {/* Note */}
                 <div className="space-y-1.5">
                   <Label>Note (optional)</Label>
                   <Input
@@ -815,16 +928,12 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
               </form>
             </div>
 
-            {/* Fixed footer — always visible */}
             <div className="px-6 py-4 pb-6 md:pb-4 border-t shrink-0 flex gap-3">
               <Button
                 type="button"
                 variant="ghost"
                 className="flex-1"
-                onClick={() => {
-                  setShowTypeDialog(false)
-                  resetForm()
-                }}
+                onClick={() => { setShowTypeDialog(false); resetForm() }}
               >
                 Cancel
               </Button>
@@ -835,6 +944,135 @@ export default function WalletDetailPage({ params }: { params: Promise<{ id: str
                 disabled={saving || !action}
               >
                 {saving ? 'Saving...' : 'Confirm'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transaction action sheet */}
+      {actionTx && !showEditSheet && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setActionTx(null)} />
+          <div className="relative z-10 w-full md:max-w-sm bg-background rounded-t-2xl md:rounded-xl overflow-hidden mb-20 md:mb-0">
+            <div className="md:hidden w-10 h-1 rounded-full bg-border mx-auto mt-3 mb-2" />
+            <div className="px-5 pt-2 pb-2">
+              <p className="text-sm font-semibold truncate">
+                {actionTx.category_name || txTypeLabel(actionTx.type, actionTx.related_wallet_name)}
+              </p>
+              <p className="text-xs text-muted-foreground">{format(new Date(actionTx.transaction_time), 'MMM d, yyyy · HH:mm')}</p>
+            </div>
+            <div className="divide-y border-t">
+              {(actionTx.type === 'INCOME' || actionTx.type === 'EXPENSE' || actionTx.type === 'TRANSFER_IN' || actionTx.type === 'TRANSFER_OUT') && (
+                <button
+                  className="w-full text-left px-5 py-4 text-sm hover:bg-muted/50 transition-colors"
+                  onClick={() => openEdit(actionTx)}
+                >
+                  Edit
+                </button>
+              )}
+              <button
+                className="w-full text-left px-5 py-4 text-sm text-destructive hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                onClick={() => handleDeleteTx(actionTx)}
+              >
+                {actionTx.type === 'TRANSFER_IN' || actionTx.type === 'TRANSFER_OUT'
+                  ? 'Delete (removes both sides)'
+                  : 'Delete'}
+              </button>
+              <button
+                className="w-full text-left px-5 py-4 text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
+                onClick={() => setActionTx(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit transaction sheet */}
+      {showEditSheet && actionTx && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={closeEdit} />
+          <div className="relative z-10 w-full md:max-w-sm bg-background rounded-t-2xl md:rounded-xl flex flex-col max-h-[88vh] mb-20 md:mb-0">
+            <div className="md:hidden w-10 h-1 rounded-full bg-border mx-auto mt-3 mb-1 shrink-0" />
+            <div className="px-5 pt-3 pb-3 flex items-center justify-between shrink-0">
+              <h2 className="text-base font-semibold">Edit Transaction</h2>
+              <button onClick={closeEdit} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 px-5 pb-6 min-h-0 space-y-4">
+              <div className="rounded-md bg-muted px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Type: </span>
+                {txTypeLabel(actionTx.type, actionTx.related_wallet_name)}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Amount (IDR)</Label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(formatNumberInput(e.target.value))}
+                  onBlur={() => setEditAmount(formatNumberBlur(editAmount))}
+                />
+              </div>
+
+              {(actionTx.type === 'INCOME' || actionTx.type === 'EXPENSE') && (
+                <div className="space-y-1.5">
+                  <Label>Category</Label>
+                  <select
+                    className="w-full h-9 rounded-md border bg-background px-3 text-sm"
+                    value={editCategoryId}
+                    onChange={(e) => setEditCategoryId(e.target.value)}
+                  >
+                    <option value="">Select category...</option>
+                    {(actionTx.type === 'INCOME' ? incomeCategories : expenseCategories).map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label>Date</Label>
+                <Popover open={editDateOpen} onOpenChange={setEditDateOpen}>
+                  <PopoverTrigger>
+                    <div className="w-full inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-sm gap-2">
+                      <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                      <span>{format(editDate, 'MMM d, yyyy')}</span>
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar mode="single" selected={editDate} onSelect={(d) => { if (d) { setEditDate(d); setEditDateOpen(false) } }} />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Note <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                <Input placeholder="Add a note..." value={editNote} onChange={(e) => setEditNote(e.target.value)} />
+              </div>
+
+              {(actionTx.type === 'TRANSFER_IN' || actionTx.type === 'TRANSFER_OUT') && (
+                <p className="text-xs text-muted-foreground">Both sides of the transfer will be updated.</p>
+              )}
+
+              {editError && <p className="text-sm text-destructive">{editError}</p>}
+
+              <Button
+                className="w-full"
+                disabled={
+                  editSaving ||
+                  !editAmount ||
+                  parseNumberInput(editAmount) <= 0 ||
+                  ((actionTx.type === 'INCOME' || actionTx.type === 'EXPENSE') && !editCategoryId)
+                }
+                onClick={handleEditSave}
+              >
+                {editSaving ? 'Saving...' : 'Save'}
               </Button>
             </div>
           </div>
